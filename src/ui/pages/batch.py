@@ -29,14 +29,20 @@ def show_batch_page():
     # タブ構成
     tab1, tab2, tab3 = st.tabs(["📁 バッチ実行", "📊 処理結果", "📈 統計・履歴"])
     
-    with tab1:
-        show_batch_execution_tab()
+    # アクティブタブの管理
+    if 'active_batch_tab' not in st.session_state:
+        st.session_state.active_batch_tab = "📁 バッチ実行"
     
-    with tab2:
-        show_batch_results_tab()
-    
-    with tab3:
-        show_batch_statistics_tab()
+    # タブ切り替え
+    if st.session_state.active_batch_tab == "📁 バッチ実行":
+        with tab1:
+            show_batch_execution_tab()
+    elif st.session_state.active_batch_tab == "📊 処理結果":
+        with tab2:
+            show_batch_results_tab()
+    else:
+        with tab3:
+            show_batch_statistics_tab()
 
 def show_batch_execution_tab():
     """バッチ実行タブ"""
@@ -308,10 +314,238 @@ def show_recent_batch_history():
     """最近のバッチ履歴を表示"""
     
     with st.expander("📝 最近のバッチ履歴", expanded=False):
-        # サンプル履歴データ（実際の実装では履歴データベースから取得）
-        history_data = [
-            {
-                "実行日時": "2024-06-11 14:30",
-                "ファイル数": 15,
-                "成功": 14,
-                "エラー": 1,
+        try:
+            config = st.session_state.config
+            if config:
+                agent = create_agent_from_config(config)
+                history = agent.get_batch_history(limit=5)
+                
+                if history:
+                    history_data = []
+                    for item in history:
+                        history_data.append({
+                            "実行日時": datetime.fromisoformat(item['created_at']).strftime("%Y-%m-%d %H:%M"),
+                            "ファイル数": item['total_files'],
+                            "成功": item['successful_files'],
+                            "エラー": item['error_files'],
+                            "処理時間": f"{item['total_time']:.0f}秒"
+                        })
+                    
+                    df = pd.DataFrame(history_data)
+                    st.dataframe(df, use_container_width=True, hide_index=True)
+                else:
+                    st.info("バッチ処理履歴がありません")
+        except Exception as e:
+            st.error(f"履歴取得エラー: {e}")
+
+def show_batch_results_tab():
+    """バッチ処理結果タブ"""
+    
+    st.subheader("📊 バッチ処理結果")
+    
+    # 結果が存在する場合
+    if 'batch_results' in st.session_state:
+        results = st.session_state.batch_results
+        
+        # 結果サマリー
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.metric("処理ファイル数", results['total_files'])
+        
+        with col2:
+            st.metric("成功", results['successful_files'])
+        
+        with col3:
+            st.metric("エラー", results['error_files'])
+        
+        with col4:
+            st.metric("処理時間", f"{results['total_time']:.0f}秒")
+        
+        # 結果詳細
+        st.markdown("### 📋 処理結果詳細")
+        
+        if results.get('file_results'):
+            # データフレーム作成
+            result_data = []
+            for file_result in results['file_results']:
+                result_data.append({
+                    'ファイル名': Path(file_result['file_path']).name,
+                    '状態': '成功' if file_result['success'] else 'エラー',
+                    '信頼度': f"{file_result.get('confidence_score', 0):.1%}",
+                    '処理時間': f"{file_result.get('processing_time', 0):.1f}秒",
+                    'エラー詳細': file_result.get('error', '-')
+                })
+            
+            df = pd.DataFrame(result_data)
+            st.dataframe(df, use_container_width=True)
+            
+            # エクスポートオプション
+            st.markdown("### 💾 結果エクスポート")
+            
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                if st.button("📥 Excel出力", use_container_width=True):
+                    DataExporter.export_to_excel(df, "batch_results.xlsx")
+            
+            with col2:
+                if st.button("📥 CSV出力", use_container_width=True):
+                    DataExporter.export_to_csv(df, "batch_results.csv")
+            
+            with col3:
+                if st.button("📥 JSON出力", use_container_width=True):
+                    DataExporter.export_to_json(results, "batch_results.json")
+        else:
+            st.info("詳細な処理結果がありません")
+    else:
+        st.info("バッチ処理を実行すると結果が表示されます")
+
+def show_batch_statistics_tab():
+    """バッチ処理統計タブ"""
+    
+    st.subheader("📈 処理統計")
+    
+    try:
+        config = st.session_state.config
+        if config:
+            agent = create_agent_from_config(config)
+            stats = agent.get_batch_statistics()
+            
+            if stats:
+                # 基本統計
+                col1, col2, col3, col4 = st.columns(4)
+                
+                with col1:
+                    st.metric("総処理数", stats['total_batches'])
+                
+                with col2:
+                    st.metric("総ファイル数", stats['total_files'])
+                
+                with col3:
+                    success_rate = stats['successful_files'] / stats['total_files'] if stats['total_files'] > 0 else 0
+                    st.metric("平均成功率", f"{success_rate:.1%}")
+                
+                with col4:
+                    avg_time = stats['total_processing_time'] / stats['total_files'] if stats['total_files'] > 0 else 0
+                    st.metric("平均処理時間", f"{avg_time:.1f}秒/ファイル")
+                
+                # 時系列チャート
+                if 'time_series_data' in stats:
+                    st.markdown("### 📊 処理推移")
+                    
+                    df = pd.DataFrame(stats['time_series_data'])
+                    df['date'] = pd.to_datetime(df['date'])
+                    
+                    StatisticsChart.show_time_series(
+                        df,
+                        'date',
+                        'processed_files',
+                        "日別処理ファイル数"
+                    )
+                
+                # 処理時間分布
+                if 'processing_times' in stats:
+                    st.markdown("### 📊 処理時間分布")
+                    
+                    StatisticsChart.show_distribution(
+                        stats['processing_times'],
+                        "処理時間分布"
+                    )
+                
+                # エラー分析
+                if 'error_types' in stats:
+                    st.markdown("### 📊 エラー分析")
+                    
+                    error_data = stats['error_types']
+                    StatisticsChart.show_comparison(
+                        list(error_data.keys()),
+                        list(error_data.values()),
+                        "エラータイプ別発生数"
+                    )
+            else:
+                st.info("統計データがありません")
+    except Exception as e:
+        st.error(f"統計取得エラー: {e}")
+
+def execute_batch_processing(input_directory: str, output_directory: str, options: dict):
+    """バッチ処理を実行"""
+    
+    try:
+        # 設定確認
+        config = st.session_state.config
+        if not config:
+            raise ValueError("システム設定が読み込まれていません")
+        
+        api_key = config.get('openai.api_key')
+        if not api_key or api_key == 'your-openai-api-key-here':
+            raise ValueError("OpenAI APIキーが設定されていません。設定ページで設定してください。")
+        
+        # 入力ディレクトリ確認
+        input_path = Path(input_directory)
+        if not input_path.exists():
+            raise ValueError(f"入力ディレクトリが存在しません: {input_directory}")
+        
+        # 出力ディレクトリ作成
+        output_path = Path(output_directory)
+        output_path.mkdir(parents=True, exist_ok=True)
+        
+        # バッチ処理開始
+        st.session_state.batch_processing = True
+        st.session_state.batch_progress = {
+            'total_files': 0,
+            'processed_files': 0,
+            'successful': 0,
+            'errors': 0,
+            'start_time': time.time()
+        }
+        
+        # バッチプロセッサ初期化
+        processor = BatchProcessor(
+            agent=create_agent_from_config(config),
+            batch_size=options['batch_size'],
+            max_workers=options['max_workers'],
+            timeout_minutes=options['timeout_minutes'],
+            retry_attempts=options['retry_attempts']
+        )
+        
+        # 処理実行
+        results = processor.process_directory(
+            input_directory=input_directory,
+            output_directory=output_directory,
+            auto_product_type=options['auto_product_type'],
+            default_product_type=options['default_product_type'],
+            error_handling=options['error_handling'],
+            output_formats=options['output_formats'],
+            progress_callback=update_progress
+        )
+        
+        # 結果保存
+        st.session_state.batch_results = results
+        st.session_state.last_batch_result = {
+            'total_files': results['total_files'],
+            'success_rate': results['successful_files'] / results['total_files'] if results['total_files'] > 0 else 0,
+            'total_time': results['total_time'],
+            'errors': [
+                {'file': r['file_path'], 'error': r['error']}
+                for r in results.get('file_results', [])
+                if not r['success']
+            ]
+        }
+        
+        # 処理完了
+        st.session_state.batch_processing = False
+        NotificationManager.show_success("バッチ処理が完了しました")
+        
+        # 結果タブに切り替え
+        st.session_state.active_batch_tab = "📊 処理結果"
+        st.experimental_rerun()
+        
+    except Exception as e:
+        st.session_state.batch_processing = False
+        NotificationManager.show_error(f"バッチ処理エラー: {e}")
+
+def update_progress(progress_info: dict):
+    """進捗情報を更新"""
+    
+    st.session_state.batch_progress.update(progress_info)

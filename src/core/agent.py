@@ -13,7 +13,10 @@ from ..utils.database import DatabaseManager
 from ..utils.image_processor import A4ImageProcessor, A4DrawingInfo
 from ..models.analysis_result import AnalysisResult, ExtractionResult, ProcessingMetrics, ExtractionMethod, FieldType
 from ..models.template import DrawingTemplate
-from ..models.drawing import DrawingInfo, DrawingAnalysisRequest, ProductType
+from ..models.drawing import (
+    DrawingInfo, DrawingAnalysisRequest, ProductType, DrawingFormat,
+    DrawingOrientation, DrawingQuality, DrawingDimensions
+)
 
 class DrawingAnalysisAgent:
     """A4図面解析エージェント"""
@@ -99,10 +102,19 @@ class DrawingAnalysisAgent:
                         file_path=image_path,
                         file_name=Path(image_path).name,
                         file_size=Path(image_path).stat().st_size,
-                        file_format=Path(image_path).suffix.lower(),
-                        dimensions=drawing_info,
-                        orientation=drawing_info.orientation,
-                        quality=drawing_info
+                        file_format=DrawingFormat(Path(image_path).suffix.lower().lstrip('.')),
+                        dimensions=DrawingDimensions(
+                            width=drawing_info.width,
+                            height=drawing_info.height,
+                            dpi=drawing_info.dpi
+                        ),
+                        orientation=DrawingOrientation(drawing_info.orientation),
+                        quality=DrawingQuality(
+                            image_quality=drawing_info.quality_score,
+                            text_clarity=drawing_info.quality_score,
+                            line_sharpness=drawing_info.quality_score,
+                            noise_level=1.0 - drawing_info.quality_score
+                        )
                     ),
                     **options
                 )
@@ -148,6 +160,100 @@ class DrawingAnalysisAgent:
                 processing_metrics=ProcessingMetrics(processing_time=time.time() - start_time),
                 metadata={'error': str(e)}
             )
+    
+    def save_learning_data(self, edited_results: Dict[str, Any], template_id: Optional[str] = None) -> bool:
+        """学習データを保存"""
+        
+        try:
+            # 学習データ形式に変換
+            learning_data = {
+                'template_id': template_id,
+                'edited_results': edited_results,
+                'created_at': datetime.now().isoformat()
+            }
+            
+            # データベースに保存
+            self.db_manager.save_learning_data(learning_data)
+            
+            # テンプレート更新
+            if template_id:
+                self._update_template_from_learning(template_id, edited_results)
+            
+            return True
+        
+        except Exception as e:
+            self.logger.error(f"学習データ保存エラー: {e}")
+            return False
+    
+    def get_analysis_history(self, limit: int = 100) -> List[Dict[str, Any]]:
+        """解析履歴を取得"""
+        
+        try:
+            with self.db_manager.get_connection() as conn:
+                cursor = conn.cursor()
+                
+                cursor.execute("""
+                SELECT result_id, drawing_path, template_id, product_type,
+                       confidence_score, processing_time, created_at
+                FROM analysis_results
+                ORDER BY created_at DESC
+                LIMIT ?
+                """, (limit,))
+                
+                history = []
+                for row in cursor.fetchall():
+                    history.append({
+                        'result_id': row[0],
+                        'drawing_path': row[1],
+                        'template_id': row[2],
+                        'product_type': row[3],
+                        'confidence_score': row[4],
+                        'processing_time': row[5],
+                        'created_at': row[6]
+                    })
+                
+                return history
+        
+        except Exception as e:
+            self.logger.error(f"解析履歴取得エラー: {e}")
+            return []
+    
+    def get_batch_history(self, limit: int = 100) -> List[Dict[str, Any]]:
+        """バッチ処理履歴を取得"""
+        
+        try:
+            return self.db_manager.get_batch_history(limit)
+        
+        except Exception as e:
+            self.logger.error(f"バッチ履歴取得エラー: {e}")
+            return []
+    
+    def get_batch_statistics(self) -> Dict[str, Any]:
+        """バッチ処理統計を取得"""
+        
+        try:
+            stats = self.db_manager.get_batch_statistics()
+            
+            # 時系列データ取得
+            time_series = self.db_manager.get_batch_time_series()
+            if time_series:
+                stats['time_series_data'] = time_series
+            
+            # 処理時間分布取得
+            processing_times = self.db_manager.get_processing_time_distribution()
+            if processing_times:
+                stats['processing_times'] = processing_times
+            
+            # エラータイプ分析
+            error_types = self.db_manager.get_error_type_distribution()
+            if error_types:
+                stats['error_types'] = error_types
+            
+            return stats
+        
+        except Exception as e:
+            self.logger.error(f"バッチ統計取得エラー: {e}")
+            return {}
     
     def _find_matching_template(self, image_path: str, product_type: Optional[ProductType]) -> Optional[DrawingTemplate]:
         """マッチするテンプレートを検索"""
@@ -407,7 +513,7 @@ class DrawingAnalysisAgent:
             }
             
             result_id = self.db_manager.save_analysis_result(result_data)
-            analysis_result.result_id = result_id
+            analysis_result.result_id = str(result_id)  # 文字列に変換
             
             # テンプレート使用統計の更新
             if analysis_result.template_id:
@@ -436,66 +542,25 @@ class DrawingAnalysisAgent:
         with open(image_path, "rb") as image_file:
             return base64.b64encode(image_file.read()).decode('utf-8')
     
-    def batch_analyze(self, image_paths: List[str], **options) -> List[AnalysisResult]:
-        """複数図面の一括解析"""
-        
-        results = []
-        
-        for image_path in image_paths:
-            try:
-                result = self.analyze_drawing(image_path, **options)
-                results.append(result)
-                
-            except Exception as e:
-                self.logger.error(f"バッチ解析エラー ({image_path}): {e}")
-                # エラー結果も含める
-                error_result = AnalysisResult(
-                    drawing_path=image_path,
-                    extracted_data={},
-                    metadata={'error': str(e)}
-                )
-                results.append(error_result)
-        
-        return results
-    
-    def get_analysis_history(self, limit: int = 100) -> List[Dict[str, Any]]:
-        """解析履歴を取得"""
+    def _update_template_from_learning(self, template_id: str, edited_results: Dict[str, Any]):
+        """学習データからテンプレートを更新"""
         
         try:
-            with self.db_manager.get_connection() as conn:
-                cursor = conn.cursor()
-                
-                cursor.execute("""
-                SELECT result_id, drawing_path, template_id, product_type,
-                       confidence_score, processing_time, created_at
-                FROM analysis_results
-                ORDER BY created_at DESC
-                LIMIT ?
-                """, (limit,))
-                
-                history = []
-                for row in cursor.fetchall():
-                    history.append({
-                        'result_id': row[0],
-                        'drawing_path': row[1],
-                        'template_id': row[2],
-                        'product_type': row[3],
-                        'confidence_score': row[4],
-                        'processing_time': row[5],
-                        'created_at': row[6]
-                    })
-                
-                return history
-                
+            template = self.db_manager.get_template(template_id)
+            if not template:
+                return
+            
+            # フィールド位置の更新
+            for field_name, field_data in edited_results.items():
+                if field_name in template['fields']:
+                    template['fields'][field_name]['position'] = field_data.get('position')
+                    template['fields'][field_name]['confidence_threshold'] = field_data.get('confidence', 0.7)
+            
+            # テンプレート更新
+            self.db_manager.update_template(template_id, template)
+            
         except Exception as e:
-            self.logger.error(f"履歴取得エラー: {e}")
-            return []
-    
-    def get_statistics(self) -> Dict[str, Any]:
-        """解析統計を取得"""
-        
-        return self.db_manager.get_analysis_statistics()
-
+            self.logger.error(f"テンプレート更新エラー: {e}")
 
 def create_agent_from_config(config) -> DrawingAnalysisAgent:
     """設定からエージェントを作成"""

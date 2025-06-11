@@ -297,4 +297,171 @@ class ImagePreview:
                 st.image(uploaded_file, caption=uploaded_file.name, use_column_width=True)
             else:
                 st.info("📄 PDFファイルがアップロードされました")
-                st.text(f"
+                st.text("プレビューは表示できません")
+        
+        if show_analysis_info:
+            with col2:
+                st.markdown("### 📋 ファイル情報")
+                
+                # 基本情報
+                st.text(f"ファイル名: {uploaded_file.name}")
+                st.text(f"サイズ: {uploaded_file.size / 1024:.1f} KB")
+                st.text(f"形式: {uploaded_file.type}")
+                
+                # 画像の場合は追加情報
+                if uploaded_file.type.startswith('image'):
+                    import PIL.Image
+                    image = PIL.Image.open(uploaded_file)
+                    st.text(f"解像度: {image.size[0]}x{image.size[1]}")
+                    st.text(f"モード: {image.mode}")
+                    if 'dpi' in image.info:
+                        st.text(f"DPI: {image.info['dpi']}")
+
+class NotificationManager:
+    """通知管理コンポーネント"""
+    
+    @staticmethod
+    def show_success(message: str):
+        """成功通知を表示"""
+        st.success(f"✅ {message}")
+    
+    @staticmethod
+    def show_error(message: str):
+        """エラー通知を表示"""
+        st.error(f"❌ {message}")
+    
+    @staticmethod
+    def show_warning(message: str):
+        """警告通知を表示"""
+        st.warning(f"⚠️ {message}")
+    
+    @staticmethod
+    def show_info(message: str):
+        """情報通知を表示"""
+        st.info(f"ℹ️ {message}")
+
+class DataExporter:
+    """データエクスポートコンポーネント"""
+    
+    @staticmethod
+    def export_to_excel(data: pd.DataFrame, filename: str = "export.xlsx"):
+        """Excelファイルとしてエクスポート"""
+        
+        try:
+            # Excel形式に変換
+            buffer = pd.ExcelWriter(filename, engine='xlsxwriter')
+            data.to_excel(buffer, index=False, sheet_name='Data')
+            
+            # ダウンロードボタン表示
+            st.download_button(
+                label="📥 Excelファイルをダウンロード",
+                data=buffer,
+                file_name=filename,
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+            
+            NotificationManager.show_success("エクスポート準備完了")
+            
+        except Exception as e:
+            NotificationManager.show_error(f"エクスポートエラー: {e}")
+    
+    @staticmethod
+    def export_to_csv(data: pd.DataFrame, filename: str = "export.csv"):
+        """CSVファイルとしてエクスポート"""
+        
+        try:
+            # CSV形式に変換
+            csv = data.to_csv(index=False)
+            
+            # ダウンロードボタン表示
+            st.download_button(
+                label="📥 CSVファイルをダウンロード",
+                data=csv,
+                file_name=filename,
+                mime="text/csv"
+            )
+            
+            NotificationManager.show_success("エクスポート準備完了")
+            
+        except Exception as e:
+            NotificationManager.show_error(f"エクスポートエラー: {e}")
+    
+    @staticmethod
+    def export_to_json(data: Dict[str, Any], filename: str = "export.json"):
+        """JSONファイルとしてエクスポート"""
+        
+        try:
+            import json
+            
+            # JSON形式に変換
+            json_str = json.dumps(data, ensure_ascii=False, indent=2)
+            
+            # ダウンロードボタン表示
+            st.download_button(
+                label="📥 JSONファイルをダウンロード",
+                data=json_str,
+                file_name=filename,
+                mime="application/json"
+            )
+            
+            NotificationManager.show_success("エクスポート準備完了")
+            
+        except Exception as e:
+            NotificationManager.show_error(f"エクスポートエラー: {e}")
+
+class StatisticsChart:
+    """統計チャートコンポーネント"""
+    
+    @staticmethod
+    def show_time_series(data: pd.DataFrame, x_col: str, y_col: str, title: str = None):
+        """時系列チャートを表示"""
+        
+        fig = px.line(
+            data,
+            x=x_col,
+            y=y_col,
+            title=title
+        )
+        
+        fig.update_layout(
+            xaxis_title=x_col,
+            yaxis_title=y_col,
+            height=400
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+    
+    @staticmethod
+    def show_distribution(data: List[float], title: str = None):
+        """分布チャートを表示"""
+        
+        fig = px.histogram(
+            x=data,
+            title=title,
+            nbins=30
+        )
+        
+        fig.update_layout(
+            height=400,
+            showlegend=False
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+    
+    @staticmethod
+    def show_comparison(categories: List[str], values: List[float], title: str = None):
+        """比較チャートを表示"""
+        
+        fig = px.bar(
+            x=categories,
+            y=values,
+            title=title
+        )
+        
+        fig.update_layout(
+            xaxis_title="カテゴリ",
+            yaxis_title="値",
+            height=400
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)

@@ -1,6 +1,8 @@
 # src/ui/pages/settings.py
 
 import streamlit as st
+import pandas as pd
+import time
 from pathlib import Path
 from datetime import datetime
 import sys
@@ -56,6 +58,200 @@ def show_api_settings_tab():
         # APIキー表示
         if current_api_key and current_api_key != 'your-openai-api-key-here':
             st.success(f"✅ APIキー設定済み: {masked_key}")
+        else:
+            st.warning("⚠️ APIキーが設定されていません")
+        
+        # APIキー入力
+        new_api_key = st.text_input(
+            "新しいAPIキー:",
+            type="password",
+            help="OpenAI APIキーを入力してください",
+            placeholder="sk-..."
+        )
+        
+        if st.button("🔄 APIキー更新"):
+            if new_api_key and new_api_key.startswith('sk-'):
+                config.update('openai.api_key', new_api_key)
+                NotificationManager.show_success("APIキーを更新しました")
+                st.rerun()
+            else:
+                NotificationManager.show_error("有効なAPIキーを入力してください")
+        
+        # モデル設定
+        st.markdown("### 🤖 モデル設定")
+        
+        model_options = [
+            "gpt-4-vision-preview",
+            "gpt-4",
+            "gpt-4-turbo"
+        ]
+        
+        current_model = config.get('openai.model', 'gpt-4-vision-preview')
+        selected_model = st.selectbox(
+            "使用モデル:",
+            model_options,
+            index=model_options.index(current_model) if current_model in model_options else 0,
+            help="解析に使用するAIモデルを選択"
+        )
+        
+        # パラメータ設定
+        col_param1, col_param2 = st.columns(2)
+        
+        with col_param1:
+            temperature = st.slider(
+                "Temperature:",
+                min_value=0.0,
+                max_value=1.0,
+                value=config.get('openai.temperature', 0.1),
+                step=0.1,
+                help="低いほど一貫した結果（推奨: 0.1）"
+            )
+        
+        with col_param2:
+            max_tokens = st.number_input(
+                "最大トークン数:",
+                min_value=500,
+                max_value=4000,
+                value=config.get('openai.max_tokens', 2000),
+                help="APIリクエストの最大トークン数"
+            )
+        
+        # API設定保存
+        if st.button("💾 API設定保存", type="primary"):
+            config.update('openai.model', selected_model)
+            config.update('openai.temperature', temperature)
+            config.update('openai.max_tokens', max_tokens)
+            NotificationManager.show_success("API設定を保存しました")
+    
+    with col2:
+        # API接続テスト
+        st.markdown("### 🔍 接続テスト")
+        
+        if st.button("🧪 API接続テスト", use_container_width=True):
+            test_api_connection()
+        
+        # API使用量情報
+        st.markdown("### 📊 使用量情報")
+        
+        if current_api_key and current_api_key != 'your-openai-api-key-here':
+            show_api_usage_info()
+        else:
+            st.info("APIキーを設定すると使用量情報を表示できます")
+        
+        # APIキー管理のヒント
+        with st.expander("💡 APIキー管理のコツ", expanded=False):
+            st.markdown("""
+            **セキュリティ:**
+            - APIキーは他人と共有しない
+            - 定期的にキーをローテーション
+            - 使用量を定期的に監視
+            
+            **コスト管理:**
+            - 使用制限を設定
+            - 不要な処理は削減
+            - バッチ処理で効率化
+            """)
+
+def test_api_connection():
+    """API接続をテスト"""
+    
+    try:
+        config = st.session_state.config
+        api_key = config.get('openai.api_key')
+        
+        if not api_key or api_key == 'your-openai-api-key-here':
+            NotificationManager.show_error("APIキーが設定されていません")
+            return
+        
+        with st.spinner("API接続をテスト中..."):
+            import openai
+            client = openai.OpenAI(api_key=api_key)
+            
+            # 簡単なテストリクエスト
+            response = client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[{"role": "user", "content": "Hello"}],
+                max_tokens=10
+            )
+            
+            NotificationManager.show_success("✅ API接続テスト成功")
+            st.text(f"レスポンス: {response.choices[0].message.content}")
+    
+    except Exception as e:
+        NotificationManager.show_error(f"❌ API接続テスト失敗: {str(e)}")
+
+def show_api_usage_info():
+    """API使用量情報を表示"""
+    
+    try:
+        config = st.session_state.config
+        api_key = config.get('openai.api_key')
+        
+        if not api_key or api_key == 'your-openai-api-key-here':
+            return
+        
+        import openai
+        client = openai.OpenAI(api_key=api_key)
+        
+        # 使用量情報取得
+        now = datetime.now()
+        start_date = now.replace(day=1)  # 今月の1日
+        
+        usage = client.usage.retrieve(
+            start_date=start_date.isoformat(),
+            end_date=now.isoformat()
+        )
+        
+        # 使用量表示
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.metric("今月の使用量", f"${usage.total_usage:.2f}")
+        
+        with col2:
+            st.metric("今日の使用量", f"${usage.daily_costs[-1].total_cost:.2f}")
+        
+        with col3:
+            st.metric("リクエスト数", f"{usage.total_requests:,}回")
+        
+        with col4:
+            st.metric("平均コスト", f"${usage.total_usage/usage.total_requests:.3f}/req")
+    
+    except Exception as e:
+        st.error(f"使用量情報取得エラー: {e}")
+
+def show_system_settings_tab():
+    """システム設定タブ"""
+    
+    st.subheader("🖥️ システム設定")
+    
+    config = st.session_state.config
+    if not config:
+        st.error("設定ファイルが読み込まれていません")
+        return
+    
+    # ファイル・ディレクトリ設定
+    st.markdown("### 📁 ディレクトリ設定")
+    
+    directories = {
+        "入力ディレクトリ": ("files.input_directory", "data/input/"),
+        "出力ディレクトリ": ("files.output_directory", "data/output/"),
+        "一時ディレクトリ": ("files.temp_directory", "data/temp/"),
+        "エクセルテンプレート": ("excel.template_directory", "data/excel_templates/"),
+        "エクセル出力": ("excel.output_directory", "data/excel_output/")
+    }
+    
+    directory_values = {}
+    
+    for label, (config_key, default_value) in directories.items():
+        current_value = config.get(config_key, default_value)
+        new_value = st.text_input(f"{label}:", value=current_value, key=f"dir_{config_key}")
+        directory_values[config_key] = new_value
+        
+        # ディレクトリ存在確認
+        dir_path = Path(new_value)
+        if dir_path.exists():
+            st.success(f"✅ {label}: 存在")
         else:
             st.warning(f"⚠️ {label}: 存在しません")
             if st.button(f"📁 {label}作成", key=f"create_{config_key}"):
@@ -141,8 +337,7 @@ def show_api_settings_tab():
     # システム設定保存
     if st.button("💾 システム設定保存", type="primary"):
         # ディレクトリ設定更新
-        for label, (config_key, default_value) in directories.items():
-            new_value = st.session_state.get(f"dir_{config_key}", default_value)
+        for config_key, new_value in directory_values.items():
             config.update(config_key, new_value)
         
         # 処理設定更新
@@ -297,9 +492,12 @@ def update_database_statistics():
     """データベース統計更新"""
     
     try:
+        config = st.session_state.config
+        db_path = config.get('database.path')
+        
         with st.spinner("統計情報更新中..."):
-            # 統計情報の更新処理
-            time.sleep(1)  # 処理時間のシミュレーション
+            db_manager = DatabaseManager(db_path)
+            db_manager.update_statistics()
         
         NotificationManager.show_success("統計情報を更新しました")
     
@@ -352,7 +550,7 @@ def show_backup_files():
         except Exception as e:
             st.error(f"バックアップファイル取得エラー: {e}")
 
-def cleanup_old_data(days):
+def cleanup_old_data(days: int):
     """古いデータをクリーンアップ"""
     
     try:
@@ -361,9 +559,9 @@ def cleanup_old_data(days):
         
         with st.spinner(f"{days}日より古いデータを削除中..."):
             db_manager = DatabaseManager(db_path)
-            db_manager.cleanup_old_data(days)
+            deleted_count = db_manager.cleanup_old_data(days)
         
-        NotificationManager.show_success(f"{days}日より古いデータを削除しました")
+        NotificationManager.show_success(f"{deleted_count}件のデータを削除しました")
     
     except Exception as e:
         NotificationManager.show_error(f"データクリーンアップエラー: {e}")
@@ -573,189 +771,3 @@ def reset_settings():
     """設定をリセット"""
     
     st.markdown("#### ⚠️ 設定リセット")
-    st.warning("この操作により、すべての設定がデフォルト値に戻ります。")
-    
-    if st.checkbox("設定リセットを実行することを確認しました"):
-        if st.button("🔄 リセット実行", type="secondary"):
-            try:
-                config = st.session_state.config
-                
-                # デフォルト設定で上書き
-                config.config = SystemConfig.DEFAULT_CONFIG.copy()
-                config.save()
-                
-                NotificationManager.show_success("設定をリセットしました。ページを再読み込みしてください。")
-            
-            except Exception as e:
-                NotificationManager.show_error(f"設定リセットエラー: {e}")
-
-# 必要なインポート
-import pandas as pd
-import time
-            st.warning("⚠️ APIキーが設定されていません")
-        
-        # APIキー入力
-        new_api_key = st.text_input(
-            "新しいAPIキー:",
-            type="password",
-            help="OpenAI APIキーを入力してください",
-            placeholder="sk-..."
-        )
-        
-        if st.button("🔄 APIキー更新"):
-            if new_api_key and new_api_key.startswith('sk-'):
-                config.update('openai.api_key', new_api_key)
-                NotificationManager.show_success("APIキーを更新しました")
-                st.rerun()
-            else:
-                NotificationManager.show_error("有効なAPIキーを入力してください")
-        
-        # モデル設定
-        st.markdown("### 🤖 モデル設定")
-        
-        model_options = [
-            "gpt-4-vision-preview",
-            "gpt-4o",
-            "gpt-4o-mini"
-        ]
-        
-        current_model = config.get('openai.model', 'gpt-4-vision-preview')
-        selected_model = st.selectbox(
-            "使用モデル:",
-            model_options,
-            index=model_options.index(current_model) if current_model in model_options else 0,
-            help="解析に使用するAIモデルを選択"
-        )
-        
-        # パラメータ設定
-        col_param1, col_param2 = st.columns(2)
-        
-        with col_param1:
-            temperature = st.slider(
-                "Temperature:",
-                min_value=0.0,
-                max_value=1.0,
-                value=config.get('openai.temperature', 0.1),
-                step=0.1,
-                help="低いほど一貫した結果（推奨: 0.1）"
-            )
-        
-        with col_param2:
-            max_tokens = st.number_input(
-                "最大トークン数:",
-                min_value=500,
-                max_value=4000,
-                value=config.get('openai.max_tokens', 2000),
-                help="APIリクエストの最大トークン数"
-            )
-        
-        # API設定保存
-        if st.button("💾 API設定保存", type="primary"):
-            config.update('openai.model', selected_model)
-            config.update('openai.temperature', temperature)
-            config.update('openai.max_tokens', max_tokens)
-            NotificationManager.show_success("API設定を保存しました")
-    
-    with col2:
-        # API接続テスト
-        st.markdown("### 🔍 接続テスト")
-        
-        if st.button("🧪 API接続テスト", use_container_width=True):
-            test_api_connection()
-        
-        # API使用量情報
-        st.markdown("### 📊 使用量情報")
-        
-        if current_api_key and current_api_key != 'your-openai-api-key-here':
-            show_api_usage_info()
-        else:
-            st.info("APIキーを設定すると使用量情報を表示できます")
-        
-        # APIキー管理のヒント
-        with st.expander("💡 APIキー管理のコツ", expanded=False):
-            st.markdown("""
-            **セキュリティ:**
-            - APIキーは他人と共有しない
-            - 定期的にキーをローテーション
-            - 使用量を定期的に監視
-            
-            **コスト管理:**
-            - 使用制限を設定
-            - 不要な処理は削減
-            - バッチ処理で効率化
-            """)
-
-def test_api_connection():
-    """API接続をテスト"""
-    
-    try:
-        config = st.session_state.config
-        api_key = config.get('openai.api_key')
-        
-        if not api_key or api_key == 'your-openai-api-key-here':
-            NotificationManager.show_error("APIキーが設定されていません")
-            return
-        
-        with st.spinner("API接続をテスト中..."):
-            import openai
-            client = openai.OpenAI(api_key=api_key)
-            
-            # 簡単なテストリクエスト
-            response = client.chat.completions.create(
-                model="gpt-3.5-turbo",
-                messages=[{"role": "user", "content": "Hello"}],
-                max_tokens=10
-            )
-            
-            NotificationManager.show_success("✅ API接続テスト成功")
-            st.text(f"レスポンス: {response.choices[0].message.content}")
-    
-    except Exception as e:
-        NotificationManager.show_error(f"❌ API接続テスト失敗: {str(e)}")
-
-def show_api_usage_info():
-    """API使用量情報を表示"""
-    
-    # 実際の実装ではOpenAI APIから使用量を取得
-    # ここではサンプルデータを表示
-    
-    usage_data = {
-        "今月の使用量": "$45.30",
-        "今日の使用量": "$2.15",
-        "残りクレジット": "$154.70",
-        "リクエスト数": "1,250回"
-    }
-    
-    for metric, value in usage_data.items():
-        st.metric(metric, value)
-
-def show_system_settings_tab():
-    """システム設定タブ"""
-    
-    st.subheader("🖥️ システム設定")
-    
-    config = st.session_state.config
-    if not config:
-        st.error("設定ファイルが読み込まれていません")
-        return
-    
-    # ファイル・ディレクトリ設定
-    st.markdown("### 📁 ディレクトリ設定")
-    
-    directories = {
-        "入力ディレクトリ": ("files.input_directory", "data/input/"),
-        "出力ディレクトリ": ("files.output_directory", "data/output/"),
-        "一時ディレクトリ": ("files.temp_directory", "data/temp/"),
-        "エクセルテンプレート": ("excel.template_directory", "data/excel_templates/"),
-        "エクセル出力": ("excel.output_directory", "data/excel_output/")
-    }
-    
-    for label, (config_key, default_value) in directories.items():
-        current_value = config.get(config_key, default_value)
-        new_value = st.text_input(f"{label}:", value=current_value, key=f"dir_{config_key}")
-        
-        # ディレクトリ存在確認
-        dir_path = Path(new_value)
-        if dir_path.exists():
-            st.success(f"✅ {label}: 存在")
-        else:
