@@ -3,20 +3,83 @@
 import cv2
 import numpy as np
 from pathlib import Path
-from typing import Dict, Any, Tuple, Optional, Union, cast, TypeVar, List
+from typing import Dict, Any, Tuple, Optional, Union, cast, TypeVar, List, Iterator, Generator
+from typing import Protocol, runtime_checkable
+from typing_extensions import TypeGuard
 import logging
 from dataclasses import dataclass
 from PIL import Image
 from numpy.typing import NDArray
+import tempfile
+import os
+import contextlib
 
-# 型変数の定義
+# PDFサポートの確認と型インポート
+try:
+    import pdf2image
+    from pdf2image.exceptions import PDFPageCountError
+    PDF_SUPPORT = True
+except ImportError:
+    PDF_SUPPORT = False
+    PDFPageCountError = Exception  # Type alias for error handling
+    logging.warning("pdf2image is not installed. PDF support will be disabled.")
+
+# OpenCV型のエイリアス
+NDImageType = NDArray[np.uint8]
+NDFloatType = NDArray[np.float32]
+NDDoubleType = NDArray[np.float64]
+NDIntType = NDArray[np.int32]
+
+# OpenCV画像型
+CVImage = NDArray[Union[np.uint8, np.float32, np.float64]]
 ImageType = NDArray[np.uint8]
+GrayImageType = NDArray[np.uint8]
 FloatArray = NDArray[np.float64]
+ContourType = NDArray[np.int32]
+
+# 型変数
 T = TypeVar('T', bound=np.generic)
+ImageLike = TypeVar('ImageLike', NDImageType, NDFloatType, NDDoubleType)
+
+def ensure_uint8(image: NDArray[Any]) -> NDImageType:
+    """画像をuint8型に変換"""
+    if image.dtype != np.uint8:
+        return np.clip(image * 255 if image.dtype == np.float32 or image.dtype == np.float64 else image, 0, 255).astype(np.uint8)
+    return image
+
+def ensure_float32(image: NDArray[Any]) -> NDFloatType:
+    """画像をfloat32型に変換"""
+    if image.dtype != np.float32:
+        return (image / 255.0 if image.dtype == np.uint8 else image).astype(np.float32)
+    return image
+
+@contextlib.contextmanager
+def temporary_path(suffix: str = '') -> Generator[Path, None, None]:
+    """一時ファイルを安全に管理するコンテキストマネージャー"""
+    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+    try:
+        temp_file.close()
+        yield Path(temp_file.name)
+    finally:
+        try:
+            os.unlink(temp_file.name)
+        except OSError:
+            pass
+
+def is_valid_image(image: Optional[NDArray[Any]]) -> TypeGuard[CVImage]:
+    """画像の有効性を確認"""
+    return (
+        image is not None and
+        isinstance(image, np.ndarray) and
+        image.size > 0 and
+        len(image.shape) in (2, 3) and
+        image.dtype in (np.uint8, np.float32, np.float64)
+    )
 
 # PDFサポートの確認
 try:
     import pdf2image
+    from pdf2image.exceptions import PDFPageCountError
     PDF_SUPPORT = True
 except ImportError:
     PDF_SUPPORT = False
@@ -99,7 +162,7 @@ class A4ImageProcessor:
         try:
             # 画像読み込み
             image = self._load_image(file_path)
-            if image is None:
+            if not is_valid_image(image):
                 raise ValueError("画像の読み込みに失敗しました")
             
             # 画像サイズ取得
@@ -133,21 +196,26 @@ class A4ImageProcessor:
             # リサイズ
             resized = cv2.resize(image, (target_width, target_height), interpolation=cv2.INTER_AREA)
             
-            # 画質改善
-            enhanced = self._enhance_image(resized)
+            # 型変換して画質改善
+            resized_uint8 = ensure_uint8(resized)
+            enhanced = self._enhance_image(resized_uint8)
             
-            # 保存
-            output_path = str(Path(file_path).parent / f"optimized_{Path(file_path).name}")
-            cv2.imwrite(output_path, enhanced)
+            # 一時ファイルに保存
+            with temporary_path(suffix=Path(file_path).suffix) as temp_path:
+                cv2.imwrite(str(temp_path), enhanced)
+                
+                # 元のファイルと同じディレクトリに最適化ファイルをコピー
+                output_path = str(Path(file_path).parent / f"optimized_{Path(file_path).name}")
+                temp_path.rename(output_path)
+                
+                self.logger.info(f"図面最適化完了: {output_path}")
+                return output_path
             
-            self.logger.info(f"図面最適化完了: {output_path}")
-            return output_path
-        
         except Exception as e:
             self.logger.error(f"図面最適化エラー: {e}")
             raise
     
-    def _load_image(self, file_path: str) -> Optional[ImageType]:
+    def _load_image(self, file_path: str) -> Optional[CVImage]:
         """画像を読み込み"""
         
         try:
@@ -156,21 +224,38 @@ class A4ImageProcessor:
             if file_path_obj.suffix.lower() == '.pdf':
                 if not PDF_SUPPORT:
                     raise ValueError("PDF support is not available. Please install pdf2image package.")
-                # PDFの場合は最初のページを画像として読み込み
-                pages = pdf2image.convert_from_path(str(file_path_obj), dpi=self.STANDARD_DPI)
-                if not pages:
-                    raise ValueError("PDFの変換に失敗しました")
                 
-                # PIL ImageをOpenCV形式に変換
-                image = cv2.cvtColor(np.array(pages[0]), cv2.COLOR_RGB2BGR)
+                # PDFの一時変換用ディレクトリを作成
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    try:
+                        # PDFの場合は最初のページを画像として読み込み
+                        pages = pdf2image.convert_from_path(
+                            str(file_path_obj),
+                            dpi=self.STANDARD_DPI,
+                            output_folder=temp_dir,
+                            first_page=1,
+                            last_page=1
+                        )
+                        if not pages:
+                            raise ValueError("PDFの変換に失敗しました")
+                        
+                        # PIL ImageをOpenCV形式に変換
+                        image = cv2.cvtColor(np.array(pages[0]), cv2.COLOR_RGB2BGR)
+                        if not is_valid_image(image):
+                            raise ValueError("PDF画像の変換に失敗しました")
+                        return cast(ImageType, image)
+                        
+                    except PDFPageCountError:
+                        raise ValueError("PDFページの読み込みに失敗しました")
+                    except Exception as e:
+                        raise ValueError(f"PDF処理エラー: {str(e)}")
             else:
                 # 画像ファイルを直接読み込み
                 image = cv2.imread(str(file_path_obj))
+                if is_valid_image(image):
+                    return cast(ImageType, image)
             
-            if image is None:
-                raise ValueError("画像の読み込みに失敗しました")
-            
-            return image
+            raise ValueError("画像の読み込みに失敗しました")
         
         except Exception as e:
             self.logger.error(f"画像読み込みエラー: {e}")
@@ -243,7 +328,7 @@ class A4ImageProcessor:
         
         return is_valid_a4, scale_factor
     
-    def _calculate_quality_score(self, image: np.ndarray) -> float:
+    def _calculate_quality_score(self, image: CVImage) -> float:
         """画質スコアを計算"""
         
         try:
@@ -270,10 +355,14 @@ class A4ImageProcessor:
         except Exception:
             return 0.5
     
-    def _enhance_image(self, image: np.ndarray) -> np.ndarray:
+    def _enhance_image(self, image: CVImage) -> CVImage:
         """画質を改善"""
         
         try:
+            # uint8型に変換
+            if image.dtype != np.uint8:
+                image = ensure_uint8(image)
+            
             # 元画像のコピーを作成
             enhanced = image.copy()
             
@@ -317,7 +406,7 @@ class A4ImageProcessor:
                 look_up_table[0,i] = np.clip(pow(i / 255.0, 1.0 / gamma) * 255.0, 0, 255)
             enhanced = cv2.LUT(enhanced, look_up_table)
             
-            return enhanced
+            return cast(CVImage, enhanced)
         
         except Exception:
             return image
@@ -425,7 +514,7 @@ class A4ImageProcessor:
             self.logger.error(f"レイアウト特徴抽出エラー: {e}")
             raise
     
-    def _is_valid_border(self, box: np.ndarray, image_shape: tuple) -> bool:
+    def _is_valid_border(self, box: ContourType, image_shape: tuple) -> bool:
         """図面枠として有効かどうかを判定"""
         h, w = image_shape[:2]
         area = cv2.contourArea(box)
@@ -443,7 +532,7 @@ class A4ImageProcessor:
         
         return True
     
-    def _calculate_hierarchy_depth(self, hierarchy) -> int:
+    def _calculate_hierarchy_depth(self, hierarchy: Optional[np.ndarray]) -> int:
         """輪郭の階層の深さを計算"""
         if hierarchy is None:
             return 0
@@ -459,7 +548,7 @@ class A4ImageProcessor:
         
         return max_depth
     
-    def _calculate_symmetry_score(self, binary: np.ndarray) -> Union[float, np.float64]:
+    def _calculate_symmetry_score(self, binary: GrayImageType) -> float:
         """対称性スコアを計算"""
         h, w = binary.shape
         
@@ -470,7 +559,7 @@ class A4ImageProcessor:
             left = left[:, :right.shape[1]]
         elif right.shape[1] > left.shape[1]:
             right = right[:, :left.shape[1]]
-        h_symmetry = np.sum(left == right) / (left.size)
+        h_symmetry = float(np.sum(left == right)) / float(left.size)
         
         # 垂直方向の対称性
         top = binary[:h//2, :]
@@ -479,11 +568,11 @@ class A4ImageProcessor:
             top = top[:bottom.shape[0], :]
         elif bottom.shape[0] > top.shape[0]:
             bottom = bottom[:top.shape[0], :]
-        v_symmetry = np.sum(top == bottom) / (top.size)
+        v_symmetry = float(np.sum(top == bottom)) / float(top.size)
         
         return (h_symmetry + v_symmetry) / 2
     
-    def _calculate_density_distribution(self, binary: np.ndarray) -> Dict[str, float]:
+    def _calculate_density_distribution(self, binary: GrayImageType) -> Dict[str, float]:
         """密度分布を計算"""
         h, w = binary.shape
         h_mid = h // 2
@@ -502,7 +591,9 @@ class A4ImageProcessor:
             'bottom_right': float(bottom_right / 255)
         }
     
-    def _calculate_layout_regularity(self, horizontal_lines, vertical_lines, text_regions) -> float:
+    def _calculate_layout_regularity(self, horizontal_lines: List[Tuple[float, Tuple[int, int, int, int]]], 
+                                   vertical_lines: List[Tuple[float, Tuple[int, int, int, int]]], 
+                                   text_regions: List[Any]) -> float:
         """レイアウトの規則性を計算"""
         
         # 水平・垂直線の間隔の規則性
