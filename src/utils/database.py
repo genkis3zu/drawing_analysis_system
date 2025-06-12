@@ -102,7 +102,7 @@ class DatabaseManager:
         """データベース接続を取得"""
         return sqlite3.connect(self.database_path)
     
-    def save_analysis_result(self, result_data: Dict[str, Any]) -> int:
+    def save_analysis_result(self, result_data: Dict[str, Any]) -> Optional[int]:
         """解析結果を保存"""
         
         try:
@@ -130,7 +130,7 @@ class DatabaseManager:
             self.logger.error(f"解析結果保存エラー: {e}")
             raise
     
-    def save_learning_data(self, learning_data: Dict[str, Any]) -> int:
+    def save_learning_data(self, learning_data: Dict[str, Any]) -> Optional[int]:
         """学習データを保存"""
         
         try:
@@ -444,6 +444,112 @@ class DatabaseManager:
             self.logger.error(f"データベース情報取得エラー: {e}")
             raise
     
+    def get_analysis_statistics(self) -> Dict[str, Any]:
+        """解析統計情報を取得"""
+        
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                
+                # 総解析数
+                cursor.execute("SELECT COUNT(*) FROM analysis_results")
+                total_analyses = cursor.fetchone()[0]
+                
+                # 今日の解析数
+                cursor.execute("""
+                SELECT COUNT(*) FROM analysis_results
+                WHERE DATE(created_at) = DATE('now')
+                """)
+                today_analyses = cursor.fetchone()[0]
+                
+                # 平均信頼度
+                cursor.execute("""
+                SELECT AVG(confidence_score) FROM analysis_results
+                WHERE confidence_score IS NOT NULL
+                """)
+                average_confidence = cursor.fetchone()[0] or 0.0
+                
+                # 製品タイプ別統計
+                cursor.execute("""
+                SELECT product_type, COUNT(*) as count
+                FROM analysis_results
+                WHERE product_type IS NOT NULL
+                GROUP BY product_type
+                ORDER BY count DESC
+                """)
+                by_product_type = [
+                    {'product_type': row[0], 'count': row[1]}
+                    for row in cursor.fetchall()
+                ]
+                
+                # 最近の解析
+                cursor.execute("""
+                SELECT result_id, drawing_path, product_type, confidence_score, created_at
+                FROM analysis_results
+                ORDER BY created_at DESC
+                LIMIT 10
+                """)
+                recent_analyses = [
+                    {
+                        'result_id': row[0],
+                        'drawing_path': row[1],
+                        'product_type': row[2],
+                        'confidence_score': row[3],
+                        'created_at': row[4]
+                    }
+                    for row in cursor.fetchall()
+                ]
+                
+                # 最も使用されるテンプレート
+                cursor.execute("""
+                SELECT template_id, COUNT(*) as count
+                FROM analysis_results
+                WHERE template_id IS NOT NULL
+                GROUP BY template_id
+                ORDER BY count DESC
+                LIMIT 5
+                """)
+                top_templates = [
+                    {'template_id': row[0], 'count': row[1]}
+                    for row in cursor.fetchall()
+                ]
+                
+                # 時系列データ（過去30日）
+                cursor.execute("""
+                SELECT DATE(created_at) as date, COUNT(*) as count
+                FROM analysis_results
+                WHERE created_at >= DATE('now', '-30 days')
+                GROUP BY DATE(created_at)
+                ORDER BY date
+                """)
+                time_series = [
+                    {'date': row[0], 'count': row[1]}
+                    for row in cursor.fetchall()
+                ]
+                
+                return {
+                    'total_analyses': total_analyses,
+                    'today_analyses': today_analyses,
+                    'average_confidence': average_confidence,
+                    'by_product_type': by_product_type,
+                    'recent_analyses': recent_analyses,
+                    'top_templates': top_templates,
+                    'time_series': time_series
+                }
+        
+        except Exception as e:
+            self.logger.error(f"解析統計取得エラー: {e}")
+            # エラー時は空の統計を返す
+            return {
+                'total_analyses': 0,
+                'today_analyses': 0,
+                'average_confidence': 0.0,
+                'by_product_type': [],
+                'recent_analyses': [],
+                'top_templates': [],
+                'time_series': []
+            }
+    
     def vacuum_database(self):
         """データベースを最適化"""
         
@@ -501,4 +607,30 @@ class DatabaseManager:
         
         except Exception as e:
             self.logger.error(f"データクリーンアップエラー: {e}")
+            raise
+    
+    def backup_database(self) -> str:
+        """データベースのバックアップを作成"""
+        
+        try:
+            import shutil
+            from datetime import datetime
+            
+            # バックアップディレクトリ作成
+            db_path = Path(self.database_path)
+            backup_dir = db_path.parent / "backups"
+            backup_dir.mkdir(parents=True, exist_ok=True)
+            
+            # バックアップファイル名
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            backup_path = backup_dir / f"{db_path.stem}_{timestamp}.db"
+            
+            # データベースファイルをコピー
+            shutil.copy2(db_path, backup_path)
+            
+            self.logger.info(f"データベースバックアップ作成: {backup_path}")
+            return str(backup_path)
+        
+        except Exception as e:
+            self.logger.error(f"データベースバックアップエラー: {e}")
             raise

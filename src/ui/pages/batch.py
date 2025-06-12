@@ -20,7 +20,7 @@ from src.ui.components import (
     MetricsDisplay, DataExporter, StatisticsChart
 )
 
-def show_batch_page():
+def show():
     """バッチ処理ページを表示"""
     
     st.title("🔄 バッチ処理")
@@ -539,7 +539,7 @@ def execute_batch_processing(input_directory: str, output_directory: str, option
         
         # 結果タブに切り替え
         st.session_state.active_batch_tab = "📊 処理結果"
-        st.experimental_rerun()
+        st.rerun()
         
     except Exception as e:
         st.session_state.batch_processing = False

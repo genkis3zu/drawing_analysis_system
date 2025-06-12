@@ -17,6 +17,7 @@ import logging
 import subprocess
 from pathlib import Path
 import os
+from typing import Optional, Dict, Any, List
 
 # プロジェクトルートをパスに追加
 PROJECT_ROOT = Path(__file__).parent
@@ -85,6 +86,112 @@ def run_streamlit_app():
         if not streamlit_path.exists():
             print(f"❌ Streamlitアプリファイルが見つかりません: {streamlit_path}")
             return False
+        
+        # Streamlit コマンド構築
+        cmd = [
+            sys.executable, "-m", "streamlit", "run",
+            str(streamlit_path),
+            "--server.port", "8501",
+            "--server.address", "0.0.0.0",
+            "--browser.gatherUsageStats", "false",
+            "--server.fileWatcherType", "none"
+        ]
+        
+        print("🚀 A4図面解析システムを起動しています...")
+        print("   📍 URL: http://localhost:8501")
+        print("   ⏹️  停止: Ctrl+C")
+        print("   📚 ヘルプ: http://localhost:8501 にアクセス後、サイドバーを確認")
+        print("-" * 60)
+        
+        # Streamlit実行
+        result = subprocess.run(cmd, cwd=PROJECT_ROOT)
+        return result.returncode == 0
+        
+    except KeyboardInterrupt:
+        print("\n✅ アプリケーションを停止しました")
+        return True
+    except FileNotFoundError:
+        print("❌ Streamlitがインストールされていません")
+        print("   💡 インストール: pip install streamlit")
+        return False
+    except Exception as e:
+        print(f"❌ Streamlit起動エラー: {e}")
+        return False
+
+def run_batch_processing(input_dir: Optional[str] = None, output_dir: Optional[str] = None, **options):
+    """バッチ処理を実行"""
+    
+    try:
+        # 設定読み込み
+        config = SystemConfig()
+        
+        # ディレクトリ設定
+        input_dir_path = input_dir or config.get('files.input_directory', 'data/input')
+        output_dir_path = output_dir or config.get('files.output_directory', 'data/output')
+        
+        print(f"📁 入力ディレクトリ: {input_dir_path}")
+        print(f"📁 出力ディレクトリ: {output_dir_path}")
+        
+        # 入力ファイルチェック
+        input_path = Path(input_dir_path)
+        if not input_path.exists():
+            print(f"❌ 入力ディレクトリが存在しません: {input_dir_path}")
+            return False
+        
+        # 対応ファイル検索
+        file_handler = FileHandler()
+        supported_formats = config.get('files.supported_formats', ['.jpg', '.png', '.pdf'])
+        
+        input_files = []
+        for ext in supported_formats:
+            input_files.extend(input_path.glob(f"*{ext}"))
+            input_files.extend(input_path.glob(f"*{ext.upper()}"))
+        
+        if not input_files:
+            print(f"⚠️  処理対象ファイルが見つかりません")
+            print(f"   対応形式: {', '.join(supported_formats)}")
+            return False
+        
+        print(f"🔍 処理対象: {len(input_files)}ファイル")
+        print("🔄 バッチ処理を開始します...")
+        
+        # バッチ処理実行
+        from src.core.agent import create_agent_from_config
+        from src.utils.batch_processor import BatchProcessor
+        
+        agent = create_agent_from_config(config)
+        
+        # 設定から処理設定を取得
+        processing_config = config.get_processing_config()
+        batch_size = processing_config.get('batch_size', 10)
+        max_workers = processing_config.get('max_workers', 4)
+        
+        processor = BatchProcessor(agent, batch_size=batch_size, max_workers=max_workers)
+        
+        results = processor.process_directory(input_dir_path, output_dir_path)
+        
+        # 結果表示
+        print("\n" + "=" * 50)
+        print("📊 バッチ処理結果")
+        print("=" * 50)
+        print(f"総ファイル数: {results.get('total_files', 0)}")
+        print(f"処理成功: {results.get('processed', 0)}")
+        print(f"処理失敗: {len(results.get('errors', []))}")
+        print(f"処理時間: {results.get('processing_time', 0):.1f}秒")
+        
+        if results.get('errors'):
+            print("\n❌ エラー詳細:")
+            for error in results['errors'][:5]:  # 最初の5件
+                print(f"   - {error.get('file', '不明')}: {error.get('error', '不明なエラー')}")
+            
+            if len(results['errors']) > 5:
+                print(f"   ... 他{len(results['errors']) - 5}件のエラー")
+        
+        return True
+        
+    except Exception as e:
+        print(f"❌ バッチ処理エラー: {e}")
+        return False
 
 def show_system_status():
     """システム状態を表示"""
@@ -492,102 +599,3 @@ def main():
 
 if __name__ == "__main__":
     exit(main())
-        
-        # Streamlit コマンド構築
-        cmd = [
-            sys.executable, "-m", "streamlit", "run",
-            str(streamlit_path),
-            "--server.port", "8501",
-            "--server.address", "0.0.0.0",
-            "--browser.gatherUsageStats", "false",
-            "--server.fileWatcherType", "none"
-        ]
-        
-        print("🚀 A4図面解析システムを起動しています...")
-        print("   📍 URL: http://localhost:8501")
-        print("   ⏹️  停止: Ctrl+C")
-        print("   📚 ヘルプ: http://localhost:8501 にアクセス後、サイドバーを確認")
-        print("-" * 60)
-        
-        # Streamlit実行
-        result = subprocess.run(cmd, cwd=PROJECT_ROOT)
-        return result.returncode == 0
-        
-    except KeyboardInterrupt:
-        print("\n✅ アプリケーションを停止しました")
-        return True
-    except FileNotFoundError:
-        print("❌ Streamlitがインストールされていません")
-        print("   💡 インストール: pip install streamlit")
-        return False
-    except Exception as e:
-        print(f"❌ Streamlit起動エラー: {e}")
-        return False
-
-def run_batch_processing(input_dir: str = None, output_dir: str = None, **options):
-    """バッチ処理を実行"""
-    
-    try:
-        # 設定読み込み
-        config = SystemConfig()
-        
-        # ディレクトリ設定
-        input_dir = input_dir or config.get('files.input_directory', 'data/input')
-        output_dir = output_dir or config.get('files.output_directory', 'data/output')
-        
-        print(f"📁 入力ディレクトリ: {input_dir}")
-        print(f"📁 出力ディレクトリ: {output_dir}")
-        
-        # 入力ファイルチェック
-        input_path = Path(input_dir)
-        if not input_path.exists():
-            print(f"❌ 入力ディレクトリが存在しません: {input_dir}")
-            return False
-        
-        # 対応ファイル検索
-        file_handler = FileHandler()
-        supported_formats = config.get('files.supported_formats', ['.jpg', '.png', '.pdf'])
-        
-        input_files = []
-        for ext in supported_formats:
-            input_files.extend(input_path.glob(f"*{ext}"))
-            input_files.extend(input_path.glob(f"*{ext.upper()}"))
-        
-        if not input_files:
-            print(f"⚠️  処理対象ファイルが見つかりません")
-            print(f"   対応形式: {', '.join(supported_formats)}")
-            return False
-        
-        print(f"🔍 処理対象: {len(input_files)}ファイル")
-        print("🔄 バッチ処理を開始します...")
-        
-        # バッチ処理実行
-        from src.core.agent import create_agent_from_config
-        from src.utils.batch_processor import BatchProcessor
-        
-        agent = create_agent_from_config(config)
-        processor = BatchProcessor(agent, config)
-        
-        results = processor.process_directory(input_dir, output_dir)
-        
-        # 結果表示
-        print("\n" + "=" * 50)
-        print("📊 バッチ処理結果")
-        print("=" * 50)
-        print(f"総ファイル数: {results.get('total_files', 0)}")
-        print(f"処理成功: {results.get('processed', 0)}")
-        print(f"処理失敗: {len(results.get('errors', []))}")
-        print(f"処理時間: {results.get('processing_time', 0):.1f}秒")
-        
-        if results.get('errors'):
-            print("\n❌ エラー詳細:")
-            for error in results['errors'][:5]:  # 最初の5件
-                print(f"   - {error.get('file', '不明')}: {error.get('error', '不明なエラー')}")
-            
-            if len(results['errors']) > 5:
-                print(f"   ... 他{len(results['errors']) - 5}件のエラー")
-        
-        return True
-        
-    except Exception as e:
-        print(f"❌ バッチ処理エラー: {e}")

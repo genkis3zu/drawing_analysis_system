@@ -80,8 +80,8 @@ class SystemConfig:
     
     def __init__(self, config_path: str = "config.yaml"):
         self.config_path = Path(config_path)
-        self.config = self._load_config()
         self.logger = logging.getLogger(__name__)
+        self.config = self._load_config()
     
     def _load_config(self) -> Dict[str, Any]:
         """設定ファイルを読み込み"""

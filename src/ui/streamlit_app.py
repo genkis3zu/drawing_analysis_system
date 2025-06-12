@@ -9,9 +9,10 @@ import logging
 project_root = Path(__file__).parent.parent.parent
 sys.path.append(str(project_root))
 
-from src.ui.pages import analysis, templates, batch, settings
+from src.ui.pages import analysis, batch, settings, templates
 from src.utils.config import SystemConfig
 from src.ui import components
+from src.ui.components import ErrorLogger
 from src.models.drawing import ProductType
 
 # ページ設定
@@ -453,24 +454,27 @@ def main():
     selected_page = show_sidebar()
     st.session_state.current_page = selected_page
     
+    # エラーログ表示
+    ErrorLogger.show_error_log()
+    
     # メインコンテンツ
     try:
         if selected_page == "図面解析":
-            analysis.show_analysis_page()
+            analysis.show()
         elif selected_page == "テンプレート管理":
-            templates.show_templates_page()
+            templates.show()
         elif selected_page == "バッチ処理":
-            batch.show_batch_page()
+            batch.show()
         elif selected_page == "システム設定":
-            settings.show_settings_page()
+            settings.show()
         else:
             st.error(f"不明なページ: {selected_page}")
     
     except Exception as e:
         st.error(f"ページ表示エラー: {str(e)}")
         
-        if st.checkbox("詳細エラー情報を表示"):
-            st.exception(e)
+        # 例外キャプチャ
+        ErrorLogger.capture_exception()
         
         # エラー報告
         if st.button("🐛 エラーを報告"):
