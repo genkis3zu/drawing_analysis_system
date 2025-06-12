@@ -232,4 +232,108 @@ class ExcelManager:
             # 詳細シート（最大10件まで）
             for i, result in enumerate(analysis_results[:10], 1):
                 sheet_name = f"詳細_{i}"
-                ws = wb.create_sheet(title=sheet_name)
+                try:
+                    ws = wb.create_sheet(title=sheet_name)
+                except Exception:
+                    ws = wb.create_sheet(title=f"Sheet_{i}")
+                
+                # 詳細データを追加
+                self._add_result_to_sheet(ws, result)
+            
+            # 保存
+            wb.save(output_path)
+            
+            self.logger.info(f"バッチレポート作成完了: {output_path}")
+            return str(output_path)
+            
+        except Exception as e:
+            self.logger.error(f"バッチレポート作成エラー: {e}")
+            raise
+    
+    def _add_borders(self, ws, start_row: int, start_col: int, end_row: int, end_col: int):
+        """指定範囲に罫線を追加"""
+        thin_border = Border(
+            left=Side(style='thin'),
+            right=Side(style='thin'),
+            top=Side(style='thin'),
+            bottom=Side(style='thin')
+        )
+        
+        for row in range(start_row, end_row + 1):
+            for col in range(start_col, end_col + 1):
+                ws.cell(row=row, column=col).border = thin_border
+    
+    def _create_batch_summary_sheet(self, workbook: openpyxl.Workbook, analysis_results: List[AnalysisResult]):
+        """バッチサマリーシートを作成"""
+        ws = workbook.active
+        ws.title = "サマリー"
+        
+        # ヘッダー
+        headers = ["No.", "図面名", "解析日時", "総合信頼度", "抽出フィールド数", "高信頼度フィールド数", "ステータス"]
+        for col, header in enumerate(headers, 1):
+            cell = ws.cell(row=1, column=col, value=header)
+            cell.font = Font(bold=True, color="FFFFFF")
+            cell.fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+        
+        # データ行
+        for row, result in enumerate(analysis_results, 2):
+            ws.cell(row=row, column=1, value=row - 1)
+            ws.cell(row=row, column=2, value=Path(result.drawing_path).name)
+            ws.cell(row=row, column=3, value=result.created_at.strftime("%Y-%m-%d %H:%M"))
+            
+            confidence_cell = ws.cell(row=row, column=4, value=result.confidence_score)
+            confidence_cell.number_format = "0%"
+            
+            ws.cell(row=row, column=5, value=len(result.extracted_data))
+            ws.cell(row=row, column=6, value=result.quality_metrics.high_confidence_fields)
+            
+            status = "成功" if result.confidence_score >= 0.7 else "要確認"
+            status_cell = ws.cell(row=row, column=7, value=status)
+            if status == "成功":
+                status_cell.fill = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
+            else:
+                status_cell.fill = PatternFill(start_color="FFEB9C", end_color="FFEB9C", fill_type="solid")
+        
+        # 列幅調整
+        column_widths = [5, 30, 20, 15, 20, 20, 10]
+        for col, width in enumerate(column_widths, 1):
+            ws.column_dimensions[get_column_letter(col)].width = width
+        
+        # 罫線追加
+        self._add_borders(ws, 1, 1, len(analysis_results) + 1, len(headers))
+    
+    def _add_result_to_sheet(self, ws, result: AnalysisResult):
+        """シートに解析結果を追加"""
+        # 基本情報
+        ws.cell(row=1, column=1, value="図面名").font = Font(bold=True)
+        ws.cell(row=1, column=2, value=Path(result.drawing_path).name)
+        
+        ws.cell(row=2, column=1, value="解析日時").font = Font(bold=True)
+        ws.cell(row=2, column=2, value=result.created_at.strftime("%Y-%m-%d %H:%M:%S"))
+        
+        ws.cell(row=3, column=1, value="総合信頼度").font = Font(bold=True)
+        confidence_cell = ws.cell(row=3, column=2, value=result.confidence_score)
+        confidence_cell.number_format = "0%"
+        
+        # 抽出データ
+        ws.cell(row=5, column=1, value="抽出データ").font = Font(bold=True, size=12)
+        
+        headers = ["フィールド名", "抽出値", "信頼度"]
+        for col, header in enumerate(headers, 1):
+            cell = ws.cell(row=6, column=col, value=header)
+            cell.font = Font(bold=True)
+            cell.fill = PatternFill(start_color="D9D9D9", end_color="D9D9D9", fill_type="solid")
+        
+        row = 7
+        for field_name, extraction_result in result.extracted_data.items():
+            ws.cell(row=row, column=1, value=field_name)
+            ws.cell(row=row, column=2, value=str(extraction_result.value))
+            confidence_cell = ws.cell(row=row, column=3, value=extraction_result.confidence)
+            confidence_cell.number_format = "0%"
+            row += 1
+        
+        # 列幅調整
+        ws.column_dimensions['A'].width = 20
+        ws.column_dimensions['B'].width = 30
+        ws.column_dimensions['C'].width = 15

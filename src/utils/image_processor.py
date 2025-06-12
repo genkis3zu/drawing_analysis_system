@@ -3,8 +3,7 @@
 import cv2
 import numpy as np
 from pathlib import Path
-from typing import Dict, Any, Tuple, Optional, Union, cast, TypeVar, List, Iterator, Generator
-from typing import Protocol, runtime_checkable
+from typing import Dict, Any, Tuple, Optional, Union, cast, TypeVar, List, Generator
 from typing_extensions import TypeGuard
 import logging
 from dataclasses import dataclass
@@ -44,14 +43,19 @@ ImageLike = TypeVar('ImageLike', NDImageType, NDFloatType, NDDoubleType)
 def ensure_uint8(image: NDArray[Any]) -> NDImageType:
     """画像をuint8型に変換"""
     if image.dtype != np.uint8:
-        return np.clip(image * 255 if image.dtype == np.float32 or image.dtype == np.float64 else image, 0, 255).astype(np.uint8)
+        if image.dtype == np.float32 or image.dtype == np.float64:
+            return np.clip(image * 255, 0, 255).astype(np.uint8)
+        else:
+            return np.clip(image, 0, 255).astype(np.uint8)
     return image
+
 
 def ensure_float32(image: NDArray[Any]) -> NDFloatType:
     """画像をfloat32型に変換"""
     if image.dtype != np.float32:
         return (image / 255.0 if image.dtype == np.uint8 else image).astype(np.float32)
     return image
+
 
 @contextlib.contextmanager
 def temporary_path(suffix: str = '') -> Generator[Path, None, None]:
@@ -66,6 +70,7 @@ def temporary_path(suffix: str = '') -> Generator[Path, None, None]:
         except OSError:
             pass
 
+
 def is_valid_image(image: Optional[NDArray[Any]]) -> TypeGuard[CVImage]:
     """画像の有効性を確認"""
     return (
@@ -76,14 +81,7 @@ def is_valid_image(image: Optional[NDArray[Any]]) -> TypeGuard[CVImage]:
         image.dtype in (np.uint8, np.float32, np.float64)
     )
 
-# PDFサポートの確認
-try:
-    import pdf2image
-    from pdf2image.exceptions import PDFPageCountError
-    PDF_SUPPORT = True
-except ImportError:
-    PDF_SUPPORT = False
-    logging.warning("pdf2image is not installed. PDF support will be disabled.")
+
 
 @dataclass
 class A4DrawingInfo:
@@ -96,25 +94,26 @@ class A4DrawingInfo:
     scale_factor: float = 1.0
     quality_score: float = 0.0
 
+
 class A4ImageProcessor:
     """A4図面の画像処理を行うクラス"""
-    
+
     # A4サイズの定数（mm）
     A4_WIDTH_MM = 210
     A4_HEIGHT_MM = 297
-    
+
     # 標準DPI
     STANDARD_DPI = 300
     MIN_DPI = 150
     MAX_DPI = 600
-    
+
     # A4サイズのピクセル数（300DPI）
     A4_WIDTH_PX = int(A4_WIDTH_MM * STANDARD_DPI / 25.4)
     A4_HEIGHT_PX = int(A4_HEIGHT_MM * STANDARD_DPI / 25.4)
-    
+
     # A4サイズの許容誤差（mm）
     SIZE_TOLERANCE_MM = 2  # より厳密な±2mm
-    
+
     def __init__(self):
         self.logger = logging.getLogger(__name__)
     
@@ -229,6 +228,7 @@ class A4ImageProcessor:
                 with tempfile.TemporaryDirectory() as temp_dir:
                     try:
                         # PDFの場合は最初のページを画像として読み込み
+                        import pdf2image  # Import here to ensure it's available
                         pages = pdf2image.convert_from_path(
                             str(file_path_obj),
                             dpi=self.STANDARD_DPI,
@@ -403,7 +403,7 @@ class A4ImageProcessor:
             gamma = 1.2
             look_up_table = np.empty((1, 256), np.uint8)
             for i in range(256):
-                look_up_table[0,i] = np.clip(pow(i / 255.0, 1.0 / gamma) * 255.0, 0, 255)
+                look_up_table[0, i] = np.clip(pow(i / 255.0, 1.0 / gamma) * 255.0, 0, 255)
             enhanced = cv2.LUT(enhanced, look_up_table)
             
             return cast(CVImage, enhanced)
@@ -425,12 +425,12 @@ class A4ImageProcessor:
             
             # 適応的二値化
             binary = cv2.adaptiveThreshold(
-                gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
+                gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
                 cv2.THRESH_BINARY_INV, 11, 2
             )
             
             # ノイズ除去
-            kernel = np.ones((3,3), np.uint8)
+            kernel = np.ones((3, 3), np.uint8)
             binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel)
             
             # 輪郭検出（階層構造を保持）
@@ -441,7 +441,7 @@ class A4ImageProcessor:
             # 直線検出（確率的ハフ変換）
             edges = cv2.Canny(gray, 50, 150, apertureSize=3)
             lines = cv2.HoughLinesP(
-                edges, 1, np.pi/180, 50, 
+                edges, 1, np.pi/180, 50,
                 minLineLength=50, maxLineGap=5
             )
             
@@ -457,11 +457,11 @@ class A4ImageProcessor:
                     angle = abs(np.arctan2(y2-y1, x2-x1) * 180 / np.pi)
                     
                     if angle < 10 or angle > 170:
-                        horizontal_lines.append((length, (x1,y1,x2,y2)))
+                        horizontal_lines.append((length, (x1, y1, x2, y2)))
                     elif 80 < angle < 100:
-                        vertical_lines.append((length, (x1,y1,x2,y2)))
+                        vertical_lines.append((length, (x1, y1, x2, y2)))
                     else:
-                        diagonal_lines.append((length, (x1,y1,x2,y2)))
+                        diagonal_lines.append((length, (x1, y1, x2, y2)))
             
             # 図面枠の検出
             border_rect = None
@@ -479,13 +479,15 @@ class A4ImageProcessor:
             
             # テキストブロックの検出
             text_regions = []
-            if hierarchy is not None:
+            if hierarchy is not None and len(hierarchy) > 0:
                 for i, contour in enumerate(contours):
-                    if hierarchy[0][i][3] == -1:  # 外部輪郭のみ
-                        area = cv2.contourArea(contour)
-                        if 100 < area < 10000:  # テキストブロックの想定サイズ
-                            rect = cv2.minAreaRect(contour)
-                            text_regions.append(rect)
+                    if i < hierarchy.shape[1]:
+                        parent_idx = int(hierarchy[0, i, 3])  # Use numpy array indexing
+                        if parent_idx == -1:  # 外部輪郭のみ
+                            area = cv2.contourArea(contour)
+                            if 100 < area < 10000:  # テキストブロックの想定サイズ
+                                rect = cv2.minAreaRect(contour)
+                                text_regions.append(rect)
             
             # レイアウト複雑度の計算
             layout_features = {
@@ -496,8 +498,8 @@ class A4ImageProcessor:
                 'diagonal_lines': len(diagonal_lines),
                 'text_regions': len(text_regions),
                 'has_border': border_rect is not None,
-                'symmetry_score': float(self._calculate_symmetry_score(binary)),
-                'density_distribution': self._calculate_density_distribution(binary),
+                'symmetry_score': float(self._calculate_symmetry_score(cast(GrayImageType, binary))),
+                'density_distribution': self._calculate_density_distribution(cast(GrayImageType, binary)),
                 'layout_regularity': self._calculate_layout_regularity(
                     horizontal_lines, vertical_lines, text_regions
                 ),
@@ -534,16 +536,16 @@ class A4ImageProcessor:
     
     def _calculate_hierarchy_depth(self, hierarchy: Optional[np.ndarray]) -> int:
         """輪郭の階層の深さを計算"""
-        if hierarchy is None:
+        if hierarchy is None or len(hierarchy) == 0:
             return 0
         
         max_depth = 0
-        for i in range(len(hierarchy[0])):
+        for i in range(hierarchy.shape[1]):  # hierarchy shape is (1, n, 4)
             depth = 0
-            parent = hierarchy[0][i][3]
-            while parent != -1:
+            parent = int(hierarchy[0, i, 3])  # Use numpy array indexing
+            while parent != -1 and parent < hierarchy.shape[1]:
                 depth += 1
-                parent = hierarchy[0][parent][3]
+                parent = int(hierarchy[0, parent, 3])
             max_depth = max(max_depth, depth)
         
         return max_depth
@@ -591,9 +593,9 @@ class A4ImageProcessor:
             'bottom_right': float(bottom_right / 255)
         }
     
-    def _calculate_layout_regularity(self, horizontal_lines: List[Tuple[float, Tuple[int, int, int, int]]], 
-                                   vertical_lines: List[Tuple[float, Tuple[int, int, int, int]]], 
-                                   text_regions: List[Any]) -> float:
+    def _calculate_layout_regularity(self, horizontal_lines: List[Tuple[float, Tuple[int, int, int, int]]],
+                                     vertical_lines: List[Tuple[float, Tuple[int, int, int, int]]],
+                                     text_regions: List[Any]) -> float:
         """レイアウトの規則性を計算"""
         
         # 水平・垂直線の間隔の規則性
@@ -614,7 +616,10 @@ class A4ImageProcessor:
         v_std = float(np.std(v_spacing)) if v_spacing else 0
         
         # テキストブロックの配置規則性
-        text_y_coords = [rect[0][1] for rect in text_regions]
+        text_y_coords = []
+        for rect in text_regions:
+            if rect and len(rect) > 0 and len(rect[0]) > 1:
+                text_y_coords.append(rect[0][1])
         text_std = float(np.std(text_y_coords)) if text_y_coords else 0
         
         # スコアの正規化（0-1、1が最も規則的）
