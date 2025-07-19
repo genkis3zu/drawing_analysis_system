@@ -284,12 +284,47 @@ py -m pip install pytest pytest-cov pytest-watch pytest-mock
 4. 最小限の実装
 5. リファクタリング
 6. 継続的な品質チェック
+7. **必須：Git コミット＆プッシュ**
 
 ### コミット前チェック
 - linter/formatter実行
 - すべてのテスト通過確認
 - コードレビュー
 - ハードコード検出ツール実行
+
+## 🚨 Git コミット忘れ防止ルール
+
+### 必須実行タイミング
+1. **タスク完了時** - 必ずコミット
+2. **エラー修正後** - 修正をすぐにコミット
+3. **機能追加後** - 動作確認してからコミット
+4. **リファクタリング後** - 品質向上をコミット
+5. **設定変更後** - 設定の更新をコミット
+
+### コミット忘れチェック方法
+```bash
+# 変更確認
+git status
+
+# まとめてコミット
+git add -A && git commit -m "変更内容の説明" && git push origin main
+```
+
+### Claude Code Hooks活用
+- `.claude/hooks/task-complete.sh` - タスク完了時の自動リマインダー
+- `.claude/hooks/auto-commit-reminder.sh` - 強制リマインダー
+
+### コミットメッセージ規約
+```
+形式: [種類] 簡潔な説明
+
+例:
+- feat: A4画像処理機能の追加
+- fix: Unicode エンコーディングエラーの修正  
+- docs: API設定ガイドの作成
+- test: A4ImageProcessorのユニットテスト追加
+- refactor: ハードコード値の設定ファイル化
+```
 
 ## 📦 技術スタック固有ガイドライン
 

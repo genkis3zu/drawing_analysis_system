@@ -1,4 +1,13 @@
 {
+  "hooks": {
+    "user-prompt-submit": [
+      ".claude/hooks/pre-commit.sh"
+    ],
+    "task-complete": [
+      ".claude/hooks/task-complete.sh",
+      ".claude/hooks/auto-commit-reminder.sh"
+    ]
+  },
   "permissions": {
     "allow": [
       "Bash(python:*)",
