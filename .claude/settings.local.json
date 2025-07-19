@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python:*)",
+      "Bash(where python)",
+      "Bash(py --version)",
+      "Bash(py:*)",
+      "Bash(rmdir:*)",
+      "Bash(rm:*)",
+      "Bash(mkdir:*)",
+      "Bash(git add:*)"
+    ],
+    "deny": []
+  }
+}
