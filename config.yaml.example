@@ -1,0 +1,100 @@
+# A4図面解析システム設定ファイル（サンプル）
+# このファイルをconfig.yamlにコピーして使用してください
+
+# OpenAI API設定
+openai:
+  api_key: "${OPENAI_API_KEY:-your-openai-api-key-here}"  # 環境変数または直接設定
+  model: "gpt-4-vision-preview"
+  max_tokens: 2000
+  temperature: 0.1
+
+# データベース設定
+database:
+  path: "${DATABASE_PATH:-database/drawing_analysis.db}"
+  backup_path: "${DATABASE_BACKUP_PATH:-database/backups/}"
+  auto_backup: true
+  backup_interval_hours: 24
+
+# ファイル設定
+files:
+  input_directory: "${INPUT_DIR:-data/input/}"
+  output_directory: "${OUTPUT_DIR:-data/output/}"
+  temp_directory: "${TEMP_DIR:-data/temp/}"
+  samples_directory: "${SAMPLES_DIR:-data/samples/}"
+  supported_formats: [".jpg", ".jpeg", ".png", ".pdf", ".tiff"]
+
+# A4画像処理設定
+image_processing:
+  target_dpi: 300
+  min_dpi: 150
+  max_dpi: 600
+  auto_enhance: true
+  noise_reduction: true
+  contrast_adjustment: true
+  
+# 処理設定
+processing:
+  batch_size: 10
+  max_workers: 4
+  timeout_seconds: 300
+  retry_attempts: 3
+
+# 抽出設定
+extraction:
+  confidence_threshold: 0.7
+  auto_correction: true
+  default_fields:
+    - "部品番号"
+    - "製品名"
+    - "材質"
+    - "寸法"
+    - "重量"
+    - "表面処理"
+    - "精度"
+    - "図面番号"
+
+# エクセル設定
+excel:
+  template_directory: "${EXCEL_TEMPLATE_DIR:-data/excel_templates/}"
+  output_directory: "${EXCEL_OUTPUT_DIR:-data/excel_output/}"
+  default_template: "default_template.xlsx"
+
+# 学習設定
+learning:
+  auto_learning: true
+  confidence_threshold: 0.8
+  similarity_threshold: 0.85
+  min_training_samples: 5
+  template_creation_threshold: 0.9
+
+# UI設定
+ui:
+  page_title: "A4図面解析システム"
+  theme: "light"
+  sidebar_state: "expanded"
+  show_tips: true
+
+# ログ設定
+logging:
+  level: "${LOG_LEVEL:-INFO}"
+  file: "${LOG_FILE:-logs/drawing_analysis.log}"
+  max_size_mb: 100
+  backup_count: 5
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+# 通知設定（オプション）
+notifications:
+  email:
+    enabled: false
+    smtp_server: "${SMTP_SERVER:-smtp.gmail.com}"
+    smtp_port: 587
+    username: "${SMTP_USERNAME:-}"
+    password: "${SMTP_PASSWORD:-}"
+    recipients: []
+
+# システム監視設定
+monitoring:
+  enable_metrics: true
+  health_check_interval: 300
+  disk_space_threshold: 85
+  memory_threshold: 80

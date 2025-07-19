@@ -73,7 +73,7 @@ def init_project_structure():
             created_dirs.append(directory)
     
     if created_dirs:
-        print(f"✅ ディレクトリを作成しました: {', '.join(created_dirs)}")
+        print(f"[OK] ディレクトリを作成しました: {', '.join(created_dirs)}")
     
     return True
 
@@ -84,7 +84,7 @@ def run_streamlit_app():
         streamlit_path = PROJECT_ROOT / "src" / "ui" / "streamlit_app.py"
         
         if not streamlit_path.exists():
-            print(f"❌ Streamlitアプリファイルが見つかりません: {streamlit_path}")
+            print(f"[ERROR] Streamlitアプリファイルが見つかりません: {streamlit_path}")
             return False
         
         # Streamlit コマンド構築
@@ -97,10 +97,10 @@ def run_streamlit_app():
             "--server.fileWatcherType", "none"
         ]
         
-        print("🚀 A4図面解析システムを起動しています...")
-        print("   📍 URL: http://localhost:8501")
-        print("   ⏹️  停止: Ctrl+C")
-        print("   📚 ヘルプ: http://localhost:8501 にアクセス後、サイドバーを確認")
+        print("[START] A4図面解析システムを起動しています...")
+        print("   URL: http://localhost:8501")
+        print("   [STOP] 停止: Ctrl+C")
+        print("   ヘルプ: http://localhost:8501 にアクセス後、サイドバーを確認")
         print("-" * 60)
         
         # Streamlit実行
@@ -108,14 +108,14 @@ def run_streamlit_app():
         return result.returncode == 0
         
     except KeyboardInterrupt:
-        print("\n✅ アプリケーションを停止しました")
+        print("\n[OK] アプリケーションを停止しました")
         return True
     except FileNotFoundError:
-        print("❌ Streamlitがインストールされていません")
-        print("   💡 インストール: pip install streamlit")
+        print("[ERROR] Streamlitがインストールされていません")
+        print("   インストール: pip install streamlit")
         return False
     except Exception as e:
-        print(f"❌ Streamlit起動エラー: {e}")
+        print(f"[ERROR] Streamlit起動エラー: {e}")
         return False
 
 def run_batch_processing(input_dir: Optional[str] = None, output_dir: Optional[str] = None, **options):
@@ -129,13 +129,13 @@ def run_batch_processing(input_dir: Optional[str] = None, output_dir: Optional[s
         input_dir_path = input_dir or config.get('files.input_directory', 'data/input')
         output_dir_path = output_dir or config.get('files.output_directory', 'data/output')
         
-        print(f"📁 入力ディレクトリ: {input_dir_path}")
-        print(f"📁 出力ディレクトリ: {output_dir_path}")
+        print(f"[INPUT] 入力ディレクトリ: {input_dir_path}")
+        print(f"[OUTPUT] 出力ディレクトリ: {output_dir_path}")
         
         # 入力ファイルチェック
         input_path = Path(input_dir_path)
         if not input_path.exists():
-            print(f"❌ 入力ディレクトリが存在しません: {input_dir_path}")
+            print(f"[ERROR] 入力ディレクトリが存在しません: {input_dir_path}")
             return False
         
         # 対応ファイル検索
@@ -148,12 +148,12 @@ def run_batch_processing(input_dir: Optional[str] = None, output_dir: Optional[s
             input_files.extend(input_path.glob(f"*{ext.upper()}"))
         
         if not input_files:
-            print(f"⚠️  処理対象ファイルが見つかりません")
+            print(f"[WARN] 処理対象ファイルが見つかりません")
             print(f"   対応形式: {', '.join(supported_formats)}")
             return False
         
-        print(f"🔍 処理対象: {len(input_files)}ファイル")
-        print("🔄 バッチ処理を開始します...")
+        print(f"[SCAN] 処理対象: {len(input_files)}ファイル")
+        print("[PROCESSING] バッチ処理を開始します...")
         
         # バッチ処理実行
         from src.core.agent import create_agent_from_config
@@ -172,7 +172,7 @@ def run_batch_processing(input_dir: Optional[str] = None, output_dir: Optional[s
         
         # 結果表示
         print("\n" + "=" * 50)
-        print("📊 バッチ処理結果")
+        print("[RESULTS] バッチ処理結果")
         print("=" * 50)
         print(f"総ファイル数: {results.get('total_files', 0)}")
         print(f"処理成功: {results.get('processed', 0)}")
@@ -180,7 +180,7 @@ def run_batch_processing(input_dir: Optional[str] = None, output_dir: Optional[s
         print(f"処理時間: {results.get('processing_time', 0):.1f}秒")
         
         if results.get('errors'):
-            print("\n❌ エラー詳細:")
+            print("\n[ERROR] エラー詳細:")
             for error in results['errors'][:5]:  # 最初の5件
                 print(f"   - {error.get('file', '不明')}: {error.get('error', '不明なエラー')}")
             
@@ -190,7 +190,7 @@ def run_batch_processing(input_dir: Optional[str] = None, output_dir: Optional[s
         return True
         
     except Exception as e:
-        print(f"❌ バッチ処理エラー: {e}")
+        print(f"[ERROR] バッチ処理エラー: {e}")
         return False
 
 def show_system_status():
@@ -199,24 +199,24 @@ def show_system_status():
     try:
         config = SystemConfig()
         
-        print("📊 A4図面解析システム 状態確認")
+        print("[STATUS] A4図面解析システム 状態確認")
         print("=" * 60)
         
         # 基本情報
-        print("🏠 プロジェクト情報")
-        print(f"   📂 プロジェクトルート: {PROJECT_ROOT}")
-        print(f"   📄 設定ファイル: {config.config_path}")
-        print(f"   ✅ 設定有効性: {'有効' if config.validate() else '無効'}")
+        print("[INFO] プロジェクト情報")
+        print(f"   プロジェクトルート: {PROJECT_ROOT}")
+        print(f"   設定ファイル: {config.config_path}")
+        print(f"   設定有効性: {'有効' if config.validate() else '無効'}")
         
         # データベース状態
-        print("\n💾 データベース情報")
+        print("\n[DATA] データベース情報")
         db_config = config.get_database_config()
         db_path = Path(db_config['path'])
         
         if db_path.exists():
             db_size = db_path.stat().st_size / (1024 * 1024)  # MB
-            print(f"   📍 パス: {db_path}")
-            print(f"   📏 サイズ: {db_size:.2f} MB")
+            print(f"   パス: {db_path}")
+            print(f"   サイズ: {db_size:.2f} MB")
             
             # データベース統計
             try:
@@ -224,17 +224,17 @@ def show_system_status():
                 db_info = db_manager.get_database_info()
                 
                 if 'table_counts' in db_info:
-                    print("   📋 テーブル情報:")
+                    print("   [INFO] テーブル情報:")
                     for table, count in db_info['table_counts'].items():
                         print(f"      - {table}: {count}件")
                 
             except Exception as e:
-                print(f"   ⚠️  データベース詳細取得エラー: {e}")
+                print(f"   [WARN] データベース詳細取得エラー: {e}")
         else:
-            print("   ❌ データベースファイルが存在しません")
+            print("   [ERROR] データベースファイルが存在しません")
         
         # ディレクトリ状態
-        print("\n📁 ディレクトリ状態")
+        print("\n[DIRECTORIES] ディレクトリ状態")
         directories = [
             ('入力', config.get('files.input_directory', 'data/input')),
             ('出力', config.get('files.output_directory', 'data/output')),
@@ -246,22 +246,22 @@ def show_system_status():
             path = Path(dir_path)
             if path.exists():
                 file_count = len(list(path.iterdir())) if path.is_dir() else 0
-                print(f"   ✅ {name}: {path} ({file_count}ファイル)")
+                print(f"   [OK] {name}: {path} ({file_count}ファイル)")
             else:
-                print(f"   ❌ {name}: {path} (存在しません)")
+                print(f"   [ERROR] {name}: {path} (存在しません)")
         
         # API設定
-        print("\n🔑 API設定")
+        print("\n[API] API設定")
         api_key = config.get('openai.api_key', '')
         if api_key and api_key != 'your-openai-api-key-here':
-            print(f"   ✅ OpenAI API: 設定済み (***{api_key[-4:]})")
+            print(f"   [OK] OpenAI API: 設定済み (***{api_key[-4:]})")
         else:
-            print("   ❌ OpenAI API: 未設定")
+            print("   [ERROR] OpenAI API: 未設定")
         
-        print(f"   🤖 モデル: {config.get('openai.model', 'gpt-4-vision-preview')}")
+        print(f"   モデル: {config.get('openai.model', 'gpt-4-vision-preview')}")
         
         # 依存関係チェック
-        print("\n📦 依存関係")
+        print("\n[PACKAGES] 依存関係")
         required_packages = [
             'openai', 'streamlit', 'pandas', 'opencv-python', 
             'Pillow', 'openpyxl', 'PyYAML'
@@ -271,64 +271,64 @@ def show_system_status():
         for package in required_packages:
             try:
                 __import__(package.replace('-', '_'))
-                print(f"   ✅ {package}: インストール済み")
+                print(f"   [OK] {package}: インストール済み")
             except ImportError:
-                print(f"   ❌ {package}: 未インストール")
+                print(f"   [ERROR] {package}: 未インストール")
                 missing.append(package)
         
         if missing:
-            print(f"\n💡 不足パッケージのインストール:")
+            print(f"\n[INSTALL] 不足パッケージのインストール:")
             print(f"   pip install {' '.join(missing)}")
         
         return len(missing) == 0
         
     except Exception as e:
-        print(f"❌ システム状態確認エラー: {e}")
+        print(f"[ERROR] システム状態確認エラー: {e}")
         return False
 
 def setup_system():
     """システムセットアップ"""
     
-    print("🔧 A4図面解析システム セットアップ")
+    print("[SETUP] A4図面解析システム セットアップ")
     print("=" * 60)
     
     try:
         # 1. ディレクトリ初期化
-        print("1️⃣ ディレクトリ構造を初期化...")
+        print("[1] ディレクトリ構造を初期化...")
         init_project_structure()
         
         # 2. 設定ファイル確認・作成
-        print("\n2️⃣ 設定ファイルを確認...")
+        print("\n[2] 設定ファイルを確認...")
         config = SystemConfig()
         
         if config.validate():
-            print("   ✅ 設定ファイルは有効です")
+            print("   [OK] 設定ファイルは有効です")
         else:
-            print("   ⚠️  設定ファイルに問題があります")
+            print("   [WARN] 設定ファイルに問題があります")
         
         # 3. データベース初期化
-        print("\n3️⃣ データベースを初期化...")
+        print("\n[3] データベースを初期化...")
         try:
             db_config = config.get_database_config()
             db_manager = DatabaseManager(db_config['path'])
-            print("   ✅ データベース初期化完了")
+            print("   [OK] データベース初期化完了")
         except Exception as e:
-            print(f"   ❌ データベース初期化エラー: {e}")
+            print(f"   [ERROR] データベース初期化エラー: {e}")
         
         # 4. サンプルファイル作成
-        print("\n4️⃣ サンプルファイルを作成...")
+        print("\n[4] サンプルファイルを作成...")
         create_sample_files()
         
         # 5. 依存関係チェック
-        print("\n5️⃣ 依存関係をチェック...")
+        print("\n[5] 依存関係をチェック...")
         if check_dependencies():
-            print("   ✅ 全ての依存関係が満たされています")
+            print("   [OK] 全ての依存関係が満たされています")
         else:
-            print("   ⚠️  不足している依存関係があります")
+            print("   [WARN] 不足している依存関係があります")
         
         print("\n" + "=" * 60)
-        print("✅ セットアップ完了!")
-        print("\n📋 次のステップ:")
+        print("[OK] セットアップ完了!")
+        print("\n[NEXT] 次のステップ:")
         print("1. config.yaml でOpenAI APIキーを設定")
         print("2. python main.py ui でWebアプリを起動")
         print("3. data/samples/ のサンプル図面で動作確認")
@@ -337,7 +337,7 @@ def setup_system():
         return True
         
     except Exception as e:
-        print(f"❌ セットアップエラー: {e}")
+        print(f"[ERROR] セットアップエラー: {e}")
         return False
 
 def create_sample_files():
@@ -376,7 +376,7 @@ def create_sample_files():
     if not readme_path.exists():
         with open(readme_path, 'w', encoding='utf-8') as f:
             f.write(readme_content)
-        print("   📄 サンプルREADME作成")
+        print("   [FILE] サンプルREADME作成")
     
     # gitkeep for empty directories
     empty_dirs = [
@@ -417,10 +417,10 @@ def check_dependencies() -> bool:
             missing_packages.append(package)
     
     if missing_packages:
-        print("   ❌ 不足している依存関係:")
+        print("   [ERROR] 不足している依存関係:")
         for package in missing_packages:
             print(f"      - {package}")
-        print(f"\n   💡 インストールコマンド:")
+        print(f"\n   [INSTALL] インストールコマンド:")
         print(f"      pip install {' '.join(missing_packages)}")
         return False
     
@@ -429,7 +429,7 @@ def check_dependencies() -> bool:
 def run_tests():
     """基本的なテストを実行"""
     
-    print("🧪 システムテスト実行")
+    print("[TEST] システムテスト実行")
     print("=" * 40)
     
     tests_passed = 0
@@ -440,12 +440,12 @@ def run_tests():
     try:
         config = SystemConfig()
         if config.validate():
-            print("✅ 設定ファイル読み込み")
+            print("[OK] 設定ファイル読み込み")
             tests_passed += 1
         else:
-            print("❌ 設定ファイル検証失敗")
+            print("[ERROR] 設定ファイル検証失敗")
     except Exception as e:
-        print(f"❌ 設定ファイル読み込みエラー: {e}")
+        print(f"[ERROR] 設定ファイル読み込みエラー: {e}")
     
     # テスト2: データベース接続
     tests_total += 1
@@ -454,34 +454,34 @@ def run_tests():
         db_manager = DatabaseManager(config.get('database.path'))
         db_info = db_manager.get_database_info()
         if db_info.get('exists', False):
-            print("✅ データベース接続")
+            print("[OK] データベース接続")
             tests_passed += 1
         else:
-            print("❌ データベース接続失敗")
+            print("[ERROR] データベース接続失敗")
     except Exception as e:
-        print(f"❌ データベース接続エラー: {e}")
+        print(f"[ERROR] データベース接続エラー: {e}")
     
     # テスト3: 画像処理
     tests_total += 1
     try:
         from src.utils.image_processor import A4ImageProcessor
         processor = A4ImageProcessor()
-        print("✅ 画像処理モジュール")
+        print("[OK] 画像処理モジュール")
         tests_passed += 1
     except Exception as e:
-        print(f"❌ 画像処理モジュールエラー: {e}")
+        print(f"[ERROR] 画像処理モジュールエラー: {e}")
     
     # テスト4: エクセル処理
     tests_total += 1
     try:
         from src.utils.excel_manager import ExcelManager
         excel_manager = ExcelManager()
-        print("✅ エクセル処理モジュール")
+        print("[OK] エクセル処理モジュール")
         tests_passed += 1
     except Exception as e:
-        print(f"❌ エクセル処理モジュールエラー: {e}")
+        print(f"[ERROR] エクセル処理モジュールエラー: {e}")
     
-    print(f"\n📊 テスト結果: {tests_passed}/{tests_total} 通過")
+    print(f"\n[RESULTS] テスト結果: {tests_passed}/{tests_total} 通過")
     return tests_passed == tests_total
 
 def main():
@@ -551,9 +551,9 @@ def main():
         setup_logging(config)
         
     except Exception as e:
-        print(f"❌ 設定ファイル読み込みエラー: {e}")
+        print(f"[ERROR] 設定ファイル読み込みエラー: {e}")
         if args.command != 'setup':
-            print("💡 python main.py setup でセットアップを実行してください")
+            print("[INFO] python main.py setup でセットアップを実行してください")
             return 1
     
     # ログ設定
@@ -584,12 +584,12 @@ def main():
         return 0 if success else 1
         
     except KeyboardInterrupt:
-        print("\n🛑 ユーザーによって中断されました")
+        print("\n[STOP] ユーザーによって中断されました")
         return 1
         
     except Exception as e:
         logger.error(f"実行エラー: {e}")
-        print(f"❌ 予期しないエラーが発生しました: {e}")
+        print(f"[ERROR] 予期しないエラーが発生しました: {e}")
         
         if args.verbose:
             import traceback
