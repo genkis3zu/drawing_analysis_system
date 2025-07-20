@@ -16,10 +16,71 @@ from ..models.analysis_result import AnalysisResult
 class ExcelManager:
     """エクセルファイル管理クラス"""
     
-    def __init__(self, template_dir: str = "data/excel_templates"):
-        self.template_dir = Path(template_dir)
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
+        """初期化
+        
+        Args:
+            config: 設定辞書。以下のキーを含む：
+                - output_dir: 出力ディレクトリ（必須）
+                - template_dir: テンプレートディレクトリ（必須）
+                - default_template: デフォルトテンプレート名（オプション）
+        """
+        if config is None:
+            config = {
+                "output_dir": "data/excel_output",
+                "template_dir": "data/excel_templates"
+            }
+        
+        self.output_dir = Path(config["output_dir"])
+        self.template_dir = Path(config["template_dir"])
+        self.default_template = config.get("default_template", "basic_template.xlsx")
+        
+        # ディレクトリ作成
+        self.output_dir.mkdir(parents=True, exist_ok=True)
         self.template_dir.mkdir(parents=True, exist_ok=True)
+        
         self.logger = logging.getLogger(__name__)
+    
+    def export_single_result(
+        self,
+        analysis_result: AnalysisResult,
+        output_path: Path,
+        apply_confidence_coloring: bool = False,
+        include_statistics: bool = False
+    ) -> Path:
+        """単一の解析結果をExcelに出力する
+        
+        Args:
+            analysis_result: 解析結果
+            output_path: 出力ファイルパス
+            apply_confidence_coloring: 信頼度による色分けを適用するか
+            include_statistics: 統計情報を含めるか
+            
+        Returns:
+            Path: 作成されたExcelファイルのパス
+            
+        Raises:
+            FileNotFoundError: 出力パスの親ディレクトリが存在しない場合
+        """
+        # 出力パスの親ディレクトリが存在するか確認
+        if not output_path.parent.exists():
+            raise FileNotFoundError(f"出力ディレクトリが存在しません: {output_path.parent}")
+        
+        # ワークブック作成
+        wb = openpyxl.Workbook()
+        
+        # 解析結果シート作成
+        self._create_results_sheet_v2(wb, analysis_result, apply_confidence_coloring)
+        
+        # 統計情報シート作成（オプション）
+        if include_statistics:
+            self._create_statistics_sheet(wb, analysis_result)
+        
+        # 保存
+        wb.save(output_path)
+        
+        self.logger.info(f"Excel出力完了: {output_path}")
+        return output_path
     
     def create_analysis_report(self, analysis_result: AnalysisResult, output_path: str = None) -> str:
         """解析結果からエクセルレポートを作成"""
@@ -214,6 +275,67 @@ class ExcelManager:
         ws.column_dimensions['A'].width = 25
         ws.column_dimensions['B'].width = 20
     
+    def export_batch_results(
+        self,
+        analysis_results: List[AnalysisResult],
+        output_path: Path
+    ) -> Path:
+        """複数の解析結果をバッチでExcelに出力する
+        
+        Args:
+            analysis_results: 解析結果のリスト
+            output_path: 出力ファイルパス
+            
+        Returns:
+            Path: 作成されたExcelファイルのパス
+        """
+        wb = openpyxl.Workbook()
+        
+        # サマリーシート
+        self._create_batch_summary_sheet(wb, analysis_results)
+        
+        # 詳細シート（結果ごと）
+        for i, result in enumerate(analysis_results, 1):
+            sheet_name = f"詳細_{i}"
+            ws = wb.create_sheet(title=sheet_name)
+            self._add_result_to_sheet(ws, result)
+        
+        # 保存
+        wb.save(output_path)
+        
+        self.logger.info(f"バッチExcel出力完了: {output_path}")
+        return output_path
+    
+    def export_with_template(
+        self,
+        analysis_result: AnalysisResult,
+        template_path: Path,
+        output_path: Path
+    ) -> Path:
+        """テンプレートを使用してExcelに出力する
+        
+        Args:
+            analysis_result: 解析結果
+            template_path: テンプレートファイルパス
+            output_path: 出力ファイルパス
+            
+        Returns:
+            Path: 作成されたExcelファイルのパス
+        """
+        # テンプレート読み込み
+        wb = openpyxl.load_workbook(template_path)
+        
+        # 図面情報シートに出力
+        if "図面情報" in wb.sheetnames:
+            ws = wb["図面情報"]
+            self._populate_template_sheet(ws, analysis_result)
+        
+        # 保存
+        wb.save(output_path)
+        
+        self.logger.info(f"テンプレートベースExcel出力完了: {output_path}")
+        return output_path
+    
     def create_batch_report(self, analysis_results: List[AnalysisResult], output_path: str = None) -> str:
         """複数解析結果のバッチレポートを作成"""
         
@@ -337,3 +459,79 @@ class ExcelManager:
         ws.column_dimensions['A'].width = 20
         ws.column_dimensions['B'].width = 30
         ws.column_dimensions['C'].width = 15
+    
+    def _create_results_sheet_v2(self, workbook: openpyxl.Workbook, analysis_result: AnalysisResult, apply_coloring: bool = False):
+        """解析結果シートを作成（テストバージョン）"""
+        ws = workbook.active
+        ws.title = "解析結果"
+        
+        # ヘッダー設定
+        headers = ["項目", "値", "信頼度"]
+        for col, header in enumerate(headers, 1):
+            cell = ws.cell(row=1, column=col, value=header)
+            cell.font = Font(bold=True)
+            cell.fill = PatternFill(start_color="D9D9D9", end_color="D9D9D9", fill_type="solid")
+        
+        # データ行作成
+        row = 2
+        for field_name, extraction_result in analysis_result.extracted_data.items():
+            ws.cell(row=row, column=1, value=field_name)
+            ws.cell(row=row, column=2, value=str(extraction_result.value))
+            
+            confidence_cell = ws.cell(row=row, column=3, value=extraction_result.confidence)
+            confidence_cell.number_format = "0.00"
+            
+            # 信頼度による色分け（オプション）
+            if apply_coloring:
+                if extraction_result.confidence >= 0.9:
+                    confidence_cell.fill = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
+                elif extraction_result.confidence >= 0.7:
+                    confidence_cell.fill = PatternFill(start_color="FFEB9C", end_color="FFEB9C", fill_type="solid")
+                else:
+                    confidence_cell.fill = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
+            
+            row += 1
+        
+        # 列幅調整
+        ws.column_dimensions['A'].width = 20
+        ws.column_dimensions['B'].width = 30
+        ws.column_dimensions['C'].width = 15
+    
+    def _create_statistics_sheet(self, workbook: openpyxl.Workbook, analysis_result: AnalysisResult):
+        """統計情報シートを作成"""
+        ws = workbook.create_sheet(title="統計情報")
+        
+        # 統計データ作成
+        statistics_items = [
+            ("平均信頼度", f"{analysis_result.quality_metrics.overall_confidence:.2%}"),
+            ("処理時間", f"{analysis_result.processing_metrics.processing_time:.2f}秒"),
+            ("抽出フィールド数", str(len(analysis_result.extracted_data))),
+            ("高信頼度フィールド数", str(analysis_result.quality_metrics.high_confidence_fields)),
+            ("バリデーション通過率", f"{analysis_result.quality_metrics.validation_pass_rate:.2%}")
+        ]
+        
+        # ヘッダー
+        ws.cell(row=1, column=1, value="項目").font = Font(bold=True)
+        ws.cell(row=1, column=2, value="値").font = Font(bold=True)
+        
+        # データ行
+        for row, (key, value) in enumerate(statistics_items, 2):
+            ws.cell(row=row, column=1, value=key)
+            ws.cell(row=row, column=2, value=value)
+        
+        # 列幅調整
+        ws.column_dimensions['A'].width = 25
+        ws.column_dimensions['B'].width = 20
+    
+    def _populate_template_sheet(self, ws, analysis_result: AnalysisResult):
+        """テンプレートシートにデータを入力"""
+        # テンプレートフォーマットに従ってデータを入力
+        # ヘッダー行の次からデータを追加
+        row = 2
+        for field_name, extraction_result in analysis_result.extracted_data.items():
+            # 既存の行にデータを挿入または新規追加
+            ws.cell(row=row, column=1, value=field_name)
+            ws.cell(row=row, column=2, value=str(extraction_result.value))
+            ws.cell(row=row, column=3, value=extraction_result.confidence)
+            ws.cell(row=row, column=4, value="")
+            row += 1
