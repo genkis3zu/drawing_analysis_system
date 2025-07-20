@@ -10,7 +10,7 @@
   },
   "permissions": {
     "allow": [
-      "Bash(py -m pytest tests/unit/test_streamlit_app.py -v)"
+      "Bash(py -m pytest tests/unit/ -v)"
     ],
     "deny": []
   }
