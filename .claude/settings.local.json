@@ -10,7 +10,7 @@
   },
   "permissions": {
     "allow": [
-      "Bash(py -m pytest tests/unit/test_excel_manager.py::TestExcelManager::test_複数結果のバッチExcel出力 -v)"
+      "Bash(py -m pytest tests/unit/test_batch_processor.py::TestBatchProcessor::test_進捗追跡機能 -v)"
     ],
     "deny": []
   }
